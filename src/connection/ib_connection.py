@@ -67,16 +67,26 @@ class IBConnection:
             errorString: Error description
             contract: Related contract (if applicable)
         """
-        if errorCode in [2104, 2106, 2158]:
+        # Informational messages (not real errors)
+        if errorCode in [2104, 2106, 2107, 2108, 2158]:
             self.logger.info(f"IB Info [{errorCode}]: {errorString}")
         elif errorCode < 1000:
             self.logger.warning(f"IB Warning [{errorCode}]: {errorString}")
         else:
             self.logger.error(f"IB Error [{errorCode}]: {errorString}")
 
-    def connect(self, timeout: int = 10) -> bool:
+    def _reset_ib_instance(self):
+        """Create a fresh IB instance and rebind event handlers."""
+        self.ib = IB()
+        self._setup_event_handlers()
+
+    def connect(self, timeout: int = 15) -> bool:
         """
         Connect to Interactive Brokers Gateway/TWS.
+        Handles existing connections gracefully:
+        - If already connected, reuses the existing connection
+        - If stale/broken, disconnects and reconnects
+        - Tries alternate client IDs if the primary is in use
 
         Args:
             timeout: Connection timeout in seconds
@@ -84,31 +94,83 @@ class IBConnection:
         Returns:
             True if connection successful, False otherwise
         """
-        try:
-            self.logger.info(
-                f"Connecting to IB Gateway at {self.config.ib_host}:{self.config.ib_port} "
-                f"(Client ID: {self.config.ib_client_id}, Mode: {self.config.trading_mode})"
-            )
+        # Already connected -- reuse
+        if self.is_connected:
+            self.logger.info("Already connected -- reusing existing connection")
+            return True
 
-            self.ib.connect(
-                host=self.config.ib_host,
-                port=self.config.ib_port,
-                clientId=self.config.ib_client_id,
-                timeout=timeout,
-            )
-
-            if self.ib.isConnected():
-                self._connected = True
-                self.logger.info("Connection established successfully")
-                return True
-            else:
-                self.logger.error("Failed to establish connection")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Connection error: {str(e)}")
+        # Internal state says connected but IB says no -- clean up stale state
+        if self._connected and not self.ib.isConnected():
+            self.logger.info("Stale connection detected -- cleaning up")
+            try:
+                self.ib.disconnect()
+            except Exception:
+                pass
             self._connected = False
-            return False
+            self._reset_ib_instance()
+
+        # Attempt connection with client ID fallback
+        client_ids = [self.config.ib_client_id]
+        for offset in [1, 2]:
+            alt = self.config.ib_client_id + offset
+            if alt not in client_ids:
+                client_ids.append(alt)
+
+        last_error = None
+        for i, cid in enumerate(client_ids):
+            try:
+                self.logger.info(
+                    f"Connecting to {self.config.ib_host}:{self.config.ib_port} "
+                    f"(Client ID: {cid}, Mode: {self.config.trading_mode})"
+                )
+
+                # Use util.patchAsyncio() to fix Jupyter event loop conflicts
+                util.patchAsyncio()
+
+                self.ib.connect(
+                    host=self.config.ib_host,
+                    port=self.config.ib_port,
+                    clientId=cid,
+                    timeout=timeout,
+                )
+
+                # Allow time for full synchronization
+                self.ib.sleep(2)
+
+                if self.ib.isConnected():
+                    self._connected = True
+                    if cid != self.config.ib_client_id:
+                        self.logger.info(f"Connected using fallback Client ID {cid}")
+                    self.logger.info("Connection established successfully")
+                    return True
+
+            except Exception as e:
+                last_error = e
+                # Check if connection actually succeeded despite the exception
+                try:
+                    self.ib.sleep(1)
+                except Exception:
+                    pass
+
+                if self.ib.isConnected():
+                    self._connected = True
+                    self.logger.info("Connection established successfully (recovered)")
+                    return True
+
+                self.logger.warning(f"Client ID {cid} failed: {str(e)}")
+
+                # Clean up and create fresh IB instance before next attempt
+                try:
+                    self.ib.disconnect()
+                except Exception:
+                    pass
+                self._connected = False
+                self._reset_ib_instance()
+                continue
+
+        self.logger.error(f"Connection failed after trying client IDs {client_ids}: {last_error}")
+        self._connected = False
+        return False
 
     def disconnect(self):
         """Disconnect from Interactive Brokers Gateway/TWS."""
@@ -193,12 +255,23 @@ class IBConnection:
             return {}
 
         try:
+            # Check if cached values are available
             account_values = self.ib.accountValues()
-            result = {}
 
+            # If cache is empty, explicitly request account updates and wait
+            if not account_values:
+                accounts = self.ib.managedAccounts()
+                if accounts:
+                    self.ib.reqAccountUpdates(True, accounts[0])
+                    self.ib.sleep(3)  # Wait for data to arrive
+                    account_values = self.ib.accountValues()
+
+            result = {}
             for item in account_values:
                 key = f"{item.tag}_{item.currency}" if item.currency else item.tag
                 result[key] = item.value
+                # Also store without currency suffix for flexible lookup
+                result[item.tag] = item.value
 
             self.logger.info(f"Retrieved {len(result)} account values")
             return result
@@ -229,8 +302,20 @@ class IBConnection:
 
         try:
             result["connected"] = True
-            result["server_version"] = self.ib.serverVersion()
-            result["connection_time"] = self.ib.connectionTime()
+            
+            # Try serverVersion as both method and property (varies by ib_insync version)
+            try:
+                result["server_version"] = self.ib.serverVersion()
+            except (TypeError, AttributeError):
+                try:
+                    result["server_version"] = self.ib.client.serverVersion
+                except Exception:
+                    result["server_version"] = "unknown"
+            
+            try:
+                result["connection_time"] = self.ib.connectionTime()
+            except Exception:
+                result["connection_time"] = datetime.now().isoformat()
 
             accounts = self.ib.managedAccounts()
             result["account_count"] = len(accounts)

@@ -1,5 +1,6 @@
 # Temporary directories
 tmpclaude-*/
+temp/
 
 # Python
 __pycache__/
@@ -36,8 +37,11 @@ wheels/
 # Trading data and logs
 *.csv
 *.log
-data/
 logs/
+
+# Market data -- All Parquet files committed (8.4 MB total, fine for Git)
+# If data grows large (>100 MB), switch to Git LFS or selective includes
+# data/historical/hourly/*.parquet  # Uncomment if hourly data gets big
 
 # API keys and config (be careful!)
 config.json
