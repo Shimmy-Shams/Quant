@@ -1,0 +1,161 @@
+# Quantitative Trading Strategy Configuration
+# Modify these parameters to experiment with different strategy settings
+
+# =============================================================================
+# DATA LOADING
+# =============================================================================
+data:
+  # Maximum number of symbols to load (null = all symbols)
+  max_symbols: null
+
+  # Minimum historical data points required per symbol
+  min_history: 100
+
+
+# =============================================================================
+# SIGNAL GENERATION
+# =============================================================================
+signals:
+  # Adaptive Z-Score
+  zscore:
+    min_lookback: 10        # Minimum lookback window (days)
+    max_lookback: 252       # Maximum lookback window (days)
+    default_lookback: 20    # Default if half-life unavailable (days)
+
+  # Hurst Exponent Filter
+  hurst:
+    threshold: 0.5          # Only trade stocks with H < threshold (mean reverting)
+    lags: 20                # Number of lags for Hurst calculation
+
+  # Bollinger Bands
+  bollinger:
+    std_multiplier: 4.0     # Standard deviation multiplier
+    lookback: 20            # Lookback window (days)
+    volume_multiplier: 1.5  # Required volume spike (1.5x = 150% of average)
+
+  # RSI (Relative Strength Index)
+  rsi:
+    period: 14              # RSI calculation period
+    overbought: 70.0        # Overbought threshold
+    oversold: 30.0          # Oversold threshold
+
+  # Cross-Sectional Ranking
+  cross_sectional:
+    lookback: 20            # Lookback for returns calculation
+    percentiles: [10, 90]   # [bottom %, top %] for long/short
+
+  # Volatility Regime
+  volatility_regime:
+    short_lookback: 60      # Short-term volatility window
+    long_lookback: 252      # Long-term volatility window
+
+  # Composite Signal Weights
+  # These are confirmation multipliers applied to the z-score
+  composite_weights:
+    bollinger: 0.25         # Bollinger confirmation weight
+    rsi_divergence: 0.25    # RSI divergence confirmation weight
+    rsi_level: 0.25         # RSI level confirmation weight
+
+
+# =============================================================================
+# BACKTESTING
+# =============================================================================
+backtest:
+  # Capital
+  initial_capital: 1000000.0
+
+  # Transaction Costs
+  commission_pct: 0.001     # 0.1% commission per trade
+  slippage_pct: 0.0005      # 0.05% slippage
+
+  # Position Sizing
+  position_size_method: "equal_weight"  # Options: equal_weight, kelly, volatility_scaled
+  max_position_size: 0.1    # Max 10% of capital per position
+  max_total_exposure: 1.0   # Max 100% total exposure
+
+  # Entry/Exit Thresholds
+  entry_threshold: 3.0      # Enter when |signal| > threshold (z-score units)
+  exit_threshold: 0.5        # Exit when |signal| < threshold
+
+  # Risk Management
+  stop_loss_pct: null        # Stop loss (null = disabled, 0.05 = 5%)
+  take_profit_pct: null      # Take profit (null = disabled, 0.25 = 25%)
+  max_holding_days: 10       # Max holding period in days (null = hold until signal)
+
+  # Regime Filter
+  use_regime_filter: true
+  min_regime_multiplier: 0.5  # Don't trade if regime < this value
+
+
+# =============================================================================
+# OPTIMIZATION
+# =============================================================================
+optimization:
+  # Walk-Forward Settings
+  train_period_days: 252    # 1 year training window
+  test_period_days: 126     # 6 months test window
+  step_days: 63             # Step forward by 3 months
+
+  # Method
+  method: "bayesian"            # Options: grid, bayesian
+  n_trials: 100             # Number of trials for Bayesian optimization
+
+  # Objective
+  objective_metric: "total_return"  # Options: sharpe_ratio, total_return, calmar_ratio, sortino_ratio
+
+  # Minimum Trades
+  min_trades: 10            # Minimum trades required for valid backtest
+
+  # Parameter Search Ranges (Grid Search)
+  param_ranges:
+    entry_threshold: [1.5, 2.0, 2.5, 3.0]
+    exit_threshold: [0.3, 0.5, 0.7]
+    stop_loss_pct: [null, 0.05, 0.10]
+    take_profit_pct: [null, 0.10, 0.15]
+    max_holding_days: [null, 10, 20]
+
+  # Parameter Ranges (Bayesian Optimization)
+  bayesian_ranges:
+    entry_threshold: [1.0, 4.0]     # [min, max]
+    exit_threshold: [0.1, 1.5]      # [min, max]
+    stop_loss_pct: [null, 0.05, 0.10, 0.15]  # Categorical
+    take_profit_pct: [null, 0.10, 0.15, 0.20]  # Categorical
+    max_holding_days: [null, 10, 20, 30]  # Categorical
+
+
+# =============================================================================
+# UNIVERSE FILTERING
+# =============================================================================
+universe:
+  # Mean Reversion Tests
+  # A stock must pass at least one test to be considered mean-reverting
+  tests:
+    use_hurst: true         # Use Hurst exponent test
+    use_half_life: true     # Use OU half-life test
+    use_adf: true           # Use Augmented Dickey-Fuller test
+
+  # ADF Test
+  adf_pvalue_threshold: 0.05  # P-value threshold for stationarity
+
+
+# =============================================================================
+# VISUALIZATION
+# =============================================================================
+visualization:
+  # Matplotlib style
+  style: "seaborn-v0_8-darkgrid"
+
+  # Figure sizes
+  figure_sizes:
+    single_plot: [14, 6]
+    double_plot: [14, 10]
+    triple_plot: [14, 12]
+
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  # Progress updates
+  show_progress: true
+  progress_interval: 50     # Print progress every N symbols

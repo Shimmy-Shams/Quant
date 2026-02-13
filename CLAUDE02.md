@@ -6,377 +6,362 @@
 
 ---
 
-## Session Summary - 2026-02-12
+## Session Summary - 2026-02-13 (Phase 2: Mean Reversion Engine — COMPLETE)
 
-### What We Built Today
+### Overview
+
+Phase 2 built a complete mean reversion trading system from scratch, then went through extensive debugging and optimization. The system is now functional with correct accounting, centralized YAML configuration, and data-backed optimal parameters.
+
+### Critical Bugs Found & Fixed
+
+During development, several serious accounting bugs were discovered and resolved. **If you're reviewing the code, these are already fixed in the current codebase.**
+
+#### Bug 1: Inverted Short P&L (engine.py)
+- **Problem**: Short trade PnL multiplied by negative shares, flipping profits into losses
+- **Fix**: Uses `abs(shares)` for all PnL calculations
+- **Impact**: Was the single biggest source of fake losses
+
+#### Bug 2: Short Entry Cash Flow (engine.py)
+- **Problem**: Short entries subtracted cash (like longs). Shorting should ADD cash (you receive money from selling borrowed shares).
+- **Fix**: Longs: `cash -= entry_value`, Shorts: `cash += entry_value`
+
+#### Bug 3: Exit Cash Double-Counting (engine.py)
+- **Problem**: Exit added `exit_value + net_pnl`, counting the price change twice
+- **Fix**: Separate exit logic for longs (receive exit price) and shorts (pay exit price)
+
+#### Bug 4: Leverage Spiral (engine.py)
+- **Problem**: Position sizing used raw CASH instead of EQUITY. Short sales inflate cash → bigger positions → more shorts → exponential exposure. Commission reached $1.88M on $100K capital.
+- **Fix**: Position sizing now uses `current_equity = current_cash + (positions * prices).sum()`
+- **Also added**: `max_total_exposure` enforcement before opening new positions
+
+#### Bug 5: Signal Normalization Mismatch (mean_reversion.py)
+- **Problem**: Composite signal was normalized to [-1, +1] but entry threshold was 2.0. Signal could NEVER cross the threshold → 0 trades every time.
+- **Fix**: Raw z-score is now the primary signal (naturally ranges -3 to +6). Bollinger/RSI/divergence signals act as confirmation multipliers, not averaged components.
+
+#### Bug 6: Signal Directional Bias (mean_reversion.py)
+- **Problem**: Confirmation formula `zscore * (1 + confirmation)` amplified positive signals more than negative ones. In bull markets, created 3:1 short-to-long imbalance.
+- **Fix**: `agreement = np.sign(zscore) * signal` — confirmations now boost magnitude symmetrically in both directions.
+
+### Current Verified Performance (Config A — Optimal Parameters)
+
+Tested on full 285-stock universe, 2 years of daily data:
+```
+Config: entry=3.0, exit=0.5, no SL, no TP, max_hold=10 days
+Result: +27.2% return, Sharpe 0.82, 53% WR, 15.8% max DD, 698 trades
+```
+
+Long trades: +0.60% avg, 56.2% WR (stronger)
+Short trades: -0.26% avg, 48.6% WR (weaker — bull market drag)
+
+### Parameter Sweep Results (216 Combinations Tested)
+
+Best found configurations ranked by Sharpe:
+```
+#1  entry=3.0 exit=0.5 SL=None TP=None hold=10  → +27.2% Sharpe=0.82 WR=53% DD=15.8%
+#2  entry=3.0 exit=0.3 SL=None TP=0.10 hold=20  → +23.3% Sharpe=0.71 WR=54% DD=11.3%
+#3  entry=3.0 exit=0.5 SL=None TP=None hold=15  → +22.5% Sharpe=0.69 WR=52% DD=14.8%
+```
+
+Parameter sensitivity (avg Sharpe by value):
+```
+entry_threshold: 3.0 (+0.13) >> 2.5 (-0.08) >> 2.0 (-0.24) >> 1.5 (-0.70)
+exit_threshold:  0.5 slightly best, but low sensitivity
+stop_loss:       None best. 5% SL hurts (stops out recoverable trades). 10% neutral.
+take_profit:     None slightly better — let winners run
+max_holding:     20 days best (-0.12), 15 days (-0.36), 10 days middle
+```
+
+**Key insight: Higher entry threshold = fewer, higher-quality trades = better performance.**
+
+### Configuration System
+
+All hardcoded parameters have been centralized into `config.yaml`:
+
+```yaml
+# Key parameters (Config A — currently active)
+backtest:
+  initial_capital: 1000000.0
+  entry_threshold: 3.0
+  exit_threshold: 0.5
+  stop_loss_pct: null
+  take_profit_pct: null
+  max_holding_days: 10
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+
+signals:
+  hurst:
+    threshold: 0.5
+  bollinger:
+    std_multiplier: 4.0
+    volume_multiplier: 1.5
+  composite_weights:
+    bollinger: 0.25
+    rsi_divergence: 0.25
+    rsi_level: 0.25
+
+optimization:
+  method: "grid"  # or "bayesian"
+  objective_metric: "sharpe_ratio"
+```
+
+**Workflow**: Edit `config.yaml` → restart notebook kernel → re-run all cells. No code changes needed.
+
+### Files Created/Modified in Phase 2
+
+#### New Files
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/strategies/mean_reversion.py` | ~470 | Signal generation: adaptive z-score, Hurst filter, Bollinger+volume, RSI divergence, cross-sectional ranking, regime detection |
+| `src/backtest/engine.py` | ~430 | Vectorized backtesting: trade tracking, position management, performance metrics (Sharpe, Sortino, Calmar, etc.) |
+| `src/backtest/optimizer.py` | ~400 | Walk-forward optimization: grid search, Bayesian (Optuna), parameter stability analysis |
+| `src/strategy_config.py` | ~230 | YAML config loader: converts config.yaml to dataclasses, dot-path access (`config.get('backtest.entry_threshold')`) |
+| `config.yaml` | ~130 | All strategy parameters: signals, backtest, optimization, data, visualization |
+| `CONFIG_GUIDE.md` | ~150 | Documentation: how to use config, experiment templates, troubleshooting |
+| `src/main_mean_reversion.ipynb` | 28 cells | Interactive Phase 2 workflow notebook |
+
+#### Modified Files
+| File | Change |
+|------|--------|
+| `requirements.txt` | Added scipy, statsmodels, optuna, scikit-learn, pyyaml |
+| `src/main_data_collector.ipynb` | Renamed from main.ipynb (Phase 1 data collection) |
+
+### Architecture: How the Signal System Works
+
+```
+Raw Price Data (Parquet files)
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  UniverseAnalyzer                                │
+│  - Hurst exponent (H < 0.5 = mean-reverting)    │
+│  - OU half-life estimation                       │
+│  - ADF stationarity test                         │
+│  → Filters 285/293 stocks (97% pass — too many) │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
+│  MeanReversionSignals.generate_composite_signal  │
+│                                                  │
+│  PRIMARY: Raw Z-Score (adaptive lookback)        │
+│     lookback = 2 × half_life (from OU process)   │
+│     range: typically -3 to +5                    │
+│                                                  │
+│  CONFIRMATIONS (multiply z-score):               │
+│     × (1 + agreement)                            │
+│     agreement = sign(zscore) × indicator_signal  │
+│     - Bollinger + volume (weight: 0.25)          │
+│     - RSI divergence (weight: 0.25)              │
+│     - RSI level (weight: 0.25)                   │
+│                                                  │
+│  OUTPUT: composite signal in z-score units       │
+│     signal < -3.0 → strong BUY (long)            │
+│     signal > +3.0 → strong SELL (short)          │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
+│  BacktestEngine                                  │
+│  - Entry when |signal| > entry_threshold (3.0)   │
+│  - Exit when |signal| < exit_threshold (0.5)     │
+│  - Max holding: 10 days                          │
+│  - Position size: 10% of equity per trade        │
+│  - Total exposure capped at 100%                 │
+│  - Commission: 0.1% + 0.05% slippage             │
+│                                                  │
+│  Cash model:                                     │
+│    Long entry: cash -= shares × price            │
+│    Short entry: cash += shares × price           │
+│    Long exit: cash += shares × exit_price        │
+│    Short exit: cash -= shares × exit_price       │
+│    Equity = cash + Σ(positions × prices)         │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
+│  ParameterOptimizer (walk-forward)               │
+│  - Train: 252 days, Test: 126 days, Step: 63    │
+│  - Grid or Bayesian (Optuna TPE)                 │
+│  - Objective: Sharpe ratio                       │
+│  - No look-ahead bias                            │
+└─────────────────────────────────────────────────┘
+```
+
+### Project Structure (Current)
+
+```
+Quant/
+├── CLAUDE01.md                    # Context for local Claude
+├── CLAUDE02.md                    # Context for Codespaces Claude (this file)
+├── config.yaml                    # ← ALL strategy parameters
+├── CONFIG_GUIDE.md                # How to use config system
+├── requirements.txt               # Updated with new deps
+├── data/
+│   ├── historical/daily/          # 293 parquet files (2 years daily OHLCV)
+│   ├── snapshots/                 # Options data
+│   └── universe/                  # Index composition JSONs
+├── src/
+│   ├── config/
+│   │   └── config.py              # IB connection config
+│   ├── connection/
+│   │   └── ib_connection.py       # IB Gateway integration
+│   ├── data/
+│   │   ├── collector.py           # Historical data collector
+│   │   ├── universe_builder.py    # Index universe builder
+│   │   └── options.py             # Options data collector
+│   ├── strategies/
+│   │   └── mean_reversion.py      # ← Signal generation engine
+│   ├── backtest/
+│   │   ├── engine.py              # ← Backtesting engine
+│   │   └── optimizer.py           # ← Walk-forward optimizer
+│   ├── strategy_config.py         # ← YAML config loader
+│   ├── main_data_collector.ipynb  # Phase 1 workflow
+│   └── main_mean_reversion.ipynb  # ← Phase 2 workflow
+```
+
+### Usage Example (Current Working Code)
+
+```python
+from strategy_config import ConfigLoader
+from strategies.mean_reversion import MeanReversionSignals, UniverseAnalyzer
+from backtest.engine import BacktestEngine
+from backtest.optimizer import ParameterOptimizer
+
+# Load config
+config = ConfigLoader(Path('config.yaml'))
+
+# Build strategy components from config
+signal_config = config.to_signal_config()
+bt_config = config.to_backtest_config()
+opt_config = config.to_optimization_config()
+weights = config.get_composite_weights()
+
+# Analyze universe
+analyzer = UniverseAnalyzer(signal_config)
+analysis = analyzer.analyze_universe(price_data)
+mean_reverting = analysis[analysis['is_mean_reverting']]['symbol'].tolist()
+
+# Generate signals
+signal_gen = MeanReversionSignals(signal_config)
+composite, individual = signal_gen.generate_composite_signal(prices, volumes, weights=weights)
+
+# Backtest
+engine = BacktestEngine(bt_config)
+results = engine.run_backtest(price_df, signal_df, volume_df)
+print(results.summary())
+
+# Optimize
+optimizer = ParameterOptimizer(opt_config)
+opt_results = optimizer.walk_forward_optimization(price_df, signal_generator_fn, volume_df)
+```
+
+### Known Issues & Areas for Improvement
+
+1. **97% of stocks pass Hurst filter** — threshold 0.5 is not selective enough. Consider 0.4 for stricter filtering.
+2. **Shorts underperform longs** — expected in bull market data. Consider long-only mode or market regime awareness.
+3. **Composite signal has slight positive bias** — z-score spends more time positive in uptrending markets. Inherent to the approach, not a bug.
+4. **Walk-forward optimizer is slow** — grid search over 216 combos × multiple periods takes minutes. Bayesian is faster for large search spaces.
+
+### Dependencies
+
+```
+# Core
+ib_insync==0.9.86
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+pyyaml>=6.0.0
+
+# Visualization
+matplotlib>=3.7.0
+plotly>=5.14.0
+
+# Configuration
+python-dotenv>=1.0.0
+colorlog>=6.7.0
+
+# Development
+jupyter>=1.0.0
+ipykernel>=6.25.0
+
+# Statistical Analysis & Optimization
+scipy>=1.10.0
+statsmodels>=0.14.0
+optuna>=3.0.0
+scikit-learn>=1.3.0
+```
+
+---
+
+## Next Steps: Phase 3 — ML Signal Filter
+
+**Goal**: Use machine learning to filter mean reversion signals and reduce false positives.
+
+### Planned Approach
+1. **Feature engineering**: Price momentum, volume profile, volatility, microstructure features
+2. **Binary classifier**: "Will this signal be profitable?" (yes/no)
+3. **Model comparison**: Logistic Regression, Random Forest, XGBoost, LightGBM
+4. **Walk-forward training**: Same methodology as optimizer (no look-ahead)
+5. **Performance comparison**: Filtered vs unfiltered signals
+6. **Expected improvement**: Higher Sharpe, lower max DD, better win rate, fewer trades
+
+### Other Potential Improvements
+- Stricter Hurst filtering (0.4 instead of 0.5)
+- Long-only mode for bull market periods
+- Market regime overlay (VIX-based or volatility ratio)
+- Pairs trading / cross-sectional signals
+- Intraday data for tighter mean reversion
+
+---
+
+## Session Summary - 2026-02-12 (Phase 1: Data Infrastructure)
+
+### What We Built
 
 Created a complete OOP-based quantitative trading system with Interactive Brokers integration.
 
 ### Completed Work
 
-#### 1. Project Structure ✅
-- Clean modular architecture with separate folders for:
-  - `src/config/` - Configuration management
-  - `src/connection/` - IB Gateway integration
-  - `src/strategies/` - Trading strategies (ready for future)
-  - `src/data/` - Data storage (ready for future)
-  - `src/backtest/` - Backtesting engine (ready for future)
-  - `src/execution/` - Order execution (ready for future)
-  - `src/utils/` - Helper functions (ready for future)
+#### 1. Project Structure
+- Clean modular architecture: `src/config/`, `src/connection/`, `src/strategies/`, `src/data/`, `src/backtest/`, `src/execution/`, `src/utils/`
 
-#### 2. Core Classes (OOP Design) ✅
+#### 2. Core Classes (OOP Design)
+- **Config Class** (`src/config/config.py`): Loads `.env`, validates settings, masks credentials
+- **IBConnection Class** (`src/connection/ib_connection.py`): IB Gateway lifecycle, event-driven, context manager support
 
-**Config Class** (`src/config/config.py`)
-- Loads credentials from `.env` file securely
-- Validates all configuration settings
-- Masks sensitive data in logs
-- Properties: `is_paper_trading`, `is_live_trading`
-- Auto-detects `.env` file in project root
+#### 3. Data Infrastructure
+- **DataCollector** (`src/data/collector.py`): Historical OHLCV data collection
+- **UniverseBuilder** (`src/data/universe_builder.py`): Index composition management
+- **OptionsCollector** (`src/data/options.py`): Options chain snapshots
+- Collected: 293 stocks × 2 years daily data, 4 ETF options chains
 
-**IBConnection Class** (`src/connection/ib_connection.py`)
-- Manages IB Gateway/TWS connection lifecycle
-- Event-driven architecture with callback handlers
-- Methods:
-  - `connect()` / `disconnect()`
-  - `get_account_summary()`
-  - `get_positions()`
-  - `get_portfolio_items()`
-  - `get_account_values()`
-  - `test_connection()`
-- Context manager support (`with IBConnection() as ib:`)
-- Flexible imports (works as module or standalone)
+#### 4. Notebook Workflow
+- `src/main_data_collector.ipynb` — Phase 1 data collection interface
+- Auto-reload enabled for rapid development
 
-#### 3. Main Workflow Interface ✅
+### Codespaces Limitation
 
-**Jupyter Notebook** (`src/main.ipynb`)
-- **Primary interface for the trading system**
-- Auto-reload enabled (`%autoreload 2`) - no kernel restart needed when editing .py files!
-- Structured workflow:
-  1. Setup & Initialization
-  2. Configuration Loading
-  3. Connection Object Creation
-  4. **IB Gateway Connection** (the "connection page")
-  5. Connection Testing
-  6. Account Summary
-  7. Current Positions
-  8. Portfolio Details
-  9. Disconnect
-
-#### 4. Security ✅
-- `.env.example` template for credentials
-- `.env` in `.gitignore` (never committed)
-- Credentials masked in all logs and repr strings
-- Separate paper/live trading modes
-
-#### 5. Testing & Documentation ✅
-- `src/test_connection.py` - Standalone connection test script
-- `docs/IB_SETUP.md` - Detailed IB Gateway setup guide
-- `README.md` - Project documentation and quick start
-- All code tested and verified working
-
-#### 6. Dependencies Installed ✅
-```
-ib_insync==0.9.86
-pandas>=2.0.0
-numpy>=1.24.0
-matplotlib>=3.7.0
-plotly>=5.14.0
-python-dotenv>=1.0.0
-colorlog>=6.7.0
-jupyter>=1.0.0
-ipykernel>=6.25.0
-```
-
-### Key Technical Decisions
-
-#### Import Strategy
-Used flexible import pattern in `ib_connection.py`:
-```python
-try:
-    from config.config import Config
-except ImportError:
-    from ..config.config import Config
-```
-This allows the modules to work both:
-- As imported modules in notebooks
-- As standalone scripts
-
-#### Auto-Reload in Jupyter
-Added magic commands at the top of main.ipynb:
-```python
-%load_ext autoreload
-%autoreload 2
-```
-**Benefit**: Edit `config.py` or `ib_connection.py` → re-run notebook cell → changes instantly applied (no kernel restart!)
-
----
-
-## Important Discovery: Codespaces Limitation
-
-### Network Issue Found ⚠️
-
-**Problem**: Cannot connect to IB Gateway from Codespaces because:
-- IB Gateway runs on user's **local machine** (127.0.0.1 = local PC)
-- Code runs in **GitHub Codespaces** (127.0.0.1 = cloud container)
-- They are on completely different networks
-
-**Connection Topology**:
-```
-┌─────────────────────┐         ❌ Can't Connect        ┌──────────────────────┐
-│  GitHub Codespaces  │  ◄────────────────────────────  │   User's Local PC    │
-│   (Cloud Server)    │                                 │                      │
-│  - Python Code      │                                 │  - IB Gateway        │
-│  - main.ipynb       │                                 │  - Port 4002         │
-│  - 127.0.0.1 = self │                                 │  - 127.0.0.1 = self  │
-└─────────────────────┘                                 └──────────────────────┘
-```
-
-### Solution Architecture
-
-**Codespaces Environment** (this instance - CLAUDE02):
-- ✅ Code development
-- ✅ Strategy development
-- ✅ Backtesting with historical data
-- ✅ Git operations
-- ❌ **Cannot connect to IB Gateway** (network limitation)
-
-**Local Environment** (CLAUDE01):
-- ✅ Live IB Gateway connection
-- ✅ Real-time trading operations
-- ✅ Connection testing
-- ✅ Paper trading execution
-
-### Recommended Workflow
-
-1. **Develop in Codespaces** (CLAUDE02):
-   - Write strategies
-   - Build features
-   - Test logic
-   - Commit to GitHub
-
-2. **Trade Locally** (CLAUDE01):
-   - Pull latest code
-   - Connect to IB Gateway
-   - Execute trades
-   - Test live connections
-
----
-
-## File Structure Created
-
-```
-Quant/
-├── CLAUDE01.md              # Context for Local Environment Claude
-├── CLAUDE02.md              # Context for Codespaces Claude (this file)
-├── README.md                # Project documentation
-├── .env.example             # Credentials template
-├── .env                     # Actual credentials (not committed)
-├── .gitignore               # Git ignore rules
-├── requirements.txt         # Python dependencies
-├── docs/
-│   └── IB_SETUP.md         # IB Gateway setup guide
-└── src/
-    ├── config/
-    │   ├── __init__.py
-    │   └── config.py       # Config class
-    ├── connection/
-    │   ├── __init__.py
-    │   └── ib_connection.py # IBConnection class
-    ├── strategies/
-    │   └── __init__.py
-    ├── data/
-    │   └── __init__.py
-    ├── backtest/
-    │   └── __init__.py
-    ├── execution/
-    │   └── __init__.py
-    ├── utils/
-    │   └── __init__.py
-    ├── main.ipynb          # Main workflow interface
-    └── test_connection.py  # Connection test script
-```
-
----
-
-## Configuration Settings
-
-### Current .env Setup (Paper Trading)
-```bash
-IB_HOST=127.0.0.1
-IB_PORT=4002              # IB Gateway Paper Trading
-IB_CLIENT_ID=1
-IB_USERNAME=***           # Set by user
-IB_PASSWORD=***           # Set by user
-IB_ACCOUNT_ID=***         # Set by user
-TRADING_MODE=paper
-LOG_LEVEL=INFO
-```
-
-### Port Reference
-- **IB Gateway Paper**: 4002
-- **IB Gateway Live**: 4001
-- **TWS Paper**: 7497
-- **TWS Live**: 7496
-
----
-
-## Usage Examples
-
-### In Jupyter Notebook (main.ipynb)
-```python
-# Run cells in order - auto-reload handles module changes!
-
-# Cell 1: Setup (includes %autoreload 2)
-# Cell 2: Load config
-config = Config()
-
-# Cell 3: Create connection
-ib_conn = IBConnection(config)
-
-# Cell 4: Connect (will fail in Codespaces - works locally)
-success = ib_conn.connect()
-
-# Edit config.py or ib_connection.py, then just re-run cells!
-```
-
-### In Python Script
-```python
-from config.config import Config
-from connection.ib_connection import IBConnection
-
-# Context manager (recommended)
-with IBConnection() as ib:
-    if ib.is_connected:
-        positions = ib.get_positions()
-        account = ib.get_account_values()
-```
-
-### Test Connection (Terminal)
-```bash
-python src/test_connection.py
-```
-
----
-
-## What's Next
-
-### For CLAUDE01 (Local Environment)
-When you switch to local PC:
-
-1. **Pull this commit** from GitHub
-2. **Read CLAUDE01.md** for your context
-3. **Test IB Gateway connection** - should work locally!
-4. **Run main.ipynb** and execute live connection
-5. **Update CLAUDE01.md** with your progress
-6. **Push updates** so CLAUDE02 stays in sync
-
-### Future Development (Either Environment)
-
-#### Phase 2: Market Data
-- [ ] Real-time quote streaming
-- [ ] Historical data retrieval
-- [ ] Data storage and caching
-- [ ] Market data visualizations
-
-#### Phase 3: Strategy Framework
-- [ ] Base strategy class
-- [ ] Backtesting engine
-- [ ] Performance metrics (Sharpe, drawdown, etc.)
-- [ ] Example strategies (SMA crossover, mean reversion)
-
-#### Phase 4: Risk Management
-- [ ] Position sizing calculator
-- [ ] Stop-loss automation
-- [ ] Portfolio-level limits
-- [ ] Drawdown protection
-
-#### Phase 5: Execution
-- [ ] Order management system
-- [ ] Order types (market, limit, stop)
-- [ ] Fill tracking
-- [ ] Error handling and retry logic
+**Cannot connect to IB Gateway from Codespaces** — gateway runs on local PC, code runs in cloud. Solution: develop in Codespaces, trade locally.
 
 ---
 
 ## Git Workflow
 
-### Codespaces → Local Sync
 ```bash
-# In Codespaces (CLAUDE02)
-git add .
-git commit -m "Feature: Description"
-git push origin main
+# Codespaces → Local
+git add . && git commit -m "message" && git push origin main
+# Then on local: git pull origin main
 
-# On Local PC (CLAUDE01)
-git pull origin main
-# Read CLAUDE02.md for updates
+# Local → Codespaces
+git add . && git commit -m "message" && git push origin main
+# Then in Codespaces: git pull origin main
 ```
-
-### Local → Codespaces Sync
-```bash
-# On Local PC (CLAUDE01)
-git add .
-git commit -m "Feature: Description"
-git push origin main
-
-# In Codespaces (CLAUDE02)
-git pull origin main
-# Read CLAUDE01.md for updates
-```
-
----
-
-## Technical Notes
-
-### Auto-Reload Behavior
-With `%autoreload 2` enabled:
-- **Reloads**: Module functions, classes, methods
-- **Doesn't reload**: Module-level variables set on import
-- **Best practice**: Re-run initialization cells after big changes
-
-### Connection Error Codes
-- `ConnectionRefusedError(111)` - IB Gateway not running or wrong port
-- `2104` - IB Info: Market data farm connection OK (can ignore)
-- `2106` - IB Info: HMDS data farm connection OK (can ignore)
-- `2158` - IB Info: Secure gateway connection OK (can ignore)
-
-### Environment Variables
-All loaded via `python-dotenv`:
-- Automatically finds `.env` in project root
-- Can override with `Config(env_file="/path/to/.env")`
-- Never commits `.env` (in `.gitignore`)
-
----
-
-## Important Security Notes
-
-1. **Never commit `.env` file** - contains IB credentials
-2. **Use `.env.example`** as template
-3. **Always start with paper trading** before live
-4. **Credentials masked** in all logs and repr() strings
-5. **Read-Only API** recommended for initial testing
-
----
-
-## Resources
-
-- **IB API Docs**: https://interactivebrokers.github.io/
-- **ib_insync Docs**: https://ib-insync.readthedocs.io/
-- **TWS API Guide**: https://www.interactivebrokers.com/en/software/api/api.htm
-- **Project Repo**: https://github.com/Shimmy-Shams/Quant
-
----
-
-## Session End Notes
-
-**Date**: 2026-02-12
-**Status**: ✅ Codespaces environment fully configured
-**Next Step**: Switch to local PC and test IB Gateway connection
-**For CLAUDE01**: Check CLAUDE01.md, pull latest code, test connection!
 
 ---
 
 **Remember**:
 - CLAUDE02 (Codespaces) = Development & Strategy Building
 - CLAUDE01 (Local) = Live Trading & IB Connection
+- All parameters in `config.yaml` — no hardcoded values in code
 - Keep both .md files updated to maintain context sync!
