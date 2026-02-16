@@ -138,14 +138,21 @@ backtest:
 
   # Entry/Exit Thresholds
   # PHASE B.1: Threshold for gated mode (signal magnitude = 1 + boost * |zscore|)
-  entry_threshold: 1.5      # Enter when |signal| > threshold (gated mode: ~1-3 range)
-  exit_threshold: 0.8166403752061433        # Exit when |signal| < threshold
+  entry_threshold: 1.43     # Enter when |signal| > threshold (optimizer median across 34 WF periods)
+  exit_threshold: 0.50       # Exit when |signal| < threshold (optimizer median ~0.42, conservative 0.50)
 
   # Risk Management
   # PHASE A OPTIMIZATION: Enabled 8% stop to address avg loss > avg win issue
-  stop_loss_pct: 0.08        # Stop loss (null = disabled, 0.05 = 5%)
+  stop_loss_pct: 0.10        # Stop loss (optimizer numeric median 0.10; kept for risk mgmt)
+  short_stop_loss_pct: 0.10  # Short-specific stop loss (overrides stop_loss_pct for shorts)
   take_profit_pct: 0.15      # Take profit (null = disabled, 0.25 = 25%)
-  max_holding_days: 30       # Max holding period in days (null = hold until signal)
+  max_holding_days: 20       # Max holding period in days (optimizer consensus: 10-20 range)
+
+  # Short Acceleration Filter (blocks short entries on surging stocks)
+  short_accel_filter:
+    enabled: true
+    lookback_days: 3          # Check price change over N days before entry
+    threshold: 0.10           # Block short if stock rose > 10% in lookback
 
   # Trailing Stop (Phase B.3 - locks in profits after activation)
   trailing_stop:
@@ -168,10 +175,13 @@ backtest:
 # OPTIMIZATION
 # =============================================================================
 optimization:
+  # Toggle: set to false to skip optimization and use current config params
+  enabled: False
+
   # Walk-Forward Settings
-  train_period_days: 252    # 1 year training window
-  test_period_days: 126     # 6 months test window
-  step_days: 63             # Step forward by 3 months
+  train_period_days: 504    # 2 year training window (covers bull+bear cycles)
+  test_period_days: 252     # 1 year test window
+  step_days: 126            # Step forward by 6 months
 
   # Method
   method: "bayesian"            # Options: grid, bayesian
