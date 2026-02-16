@@ -263,6 +263,20 @@ class ConfigLoader:
             'rsi_level': 0.25
         })
 
+    def get_date_range(self):
+        """
+        Get backtest date range from config.
+
+        Returns:
+            Tuple of (start_date, end_date) as pd.Timestamp or None
+        """
+        import pandas as pd
+        start = self.get('backtest.start_date', None)
+        end = self.get('backtest.end_date', None)
+        start_ts = pd.Timestamp(start) if start else None
+        end_ts = pd.Timestamp(end) if end else None
+        return start_ts, end_ts
+
 
 # Global config instance (lazy loaded)
 _global_config = None

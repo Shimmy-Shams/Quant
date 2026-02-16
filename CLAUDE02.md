@@ -718,12 +718,413 @@ backtest:
 
 ---
 
-## Next Steps: Phase 2.5b → Phase 3
+## Phase 3: Vectorization & Analytics (PLANNED — 2026-02-16)
 
-### Phase 2.5b: Vectorization & Speed (After Phase A Validation)
-**Goal**: Rewrite backtest engine for 10-100x speedup before Phase B/C metric additions
+### Context
 
-### Phase 3: ML Signal Filter
+- **20-year data ready**: 258 tickers × ~5,032 bars each (47 MB Parquet), collected via Yahoo Finance on local machine (CLAUDE01/Phase 2B) and pushed to GitHub. Currently available in Codespaces at `data/historical/daily/`.
+- **Data range**: 2006-02-14 to 2026-02-15 (most tickers)
+- **Problem**: Current engine uses day-by-day Python loops over 258 symbols × 5,032 days = **~1.3M iterations**. At 2 years (502 days), the backtest took minutes. At 20 years, it will take **10-20 minutes per run**, making optimization (50+ trials × multiple walk-forward periods) **impractical** (hours to days).
+- **Solution**: Vectorize the hot path before scaling to 20-year data.
+
+### Phase 3 Overview
+
+| Part | Focus | Priority | Est. Effort |
+|------|-------|----------|-------------|
+| **3A** | Vectorize backtest engine (10-50x speedup) | CRITICAL | Medium |
+| **3B** | Performance & risk analytics dashboard | HIGH | Medium |
+
+---
+
+### Phase 3A: Vectorized Backtest Engine
+
+**Goal**: Replace the `for i, date in enumerate(dates)` loop with vectorized NumPy/Pandas operations for 10-50x speedup. Critical for 20-year backtesting and walk-forward optimization.
+
+#### Current Architecture (Slow — Row-by-Row)
+
+```
+for each day (5,032 days for 20y):
+    for each open position:          ← O(positions) per day
+        check 6 exit conditions      ← branching logic
+        calculate P&L
+        update cash/equity
+    for each symbol (258):           ← O(symbols) per day
+        check entry threshold
+        calculate position size
+        update cash/equity
+    → Total: O(days × symbols) = ~1.3M iterations with Python overhead
+```
+
+#### Target Architecture (Fast — Vectorized)
+
+```
+Step 1: Pre-compute signal matrices (entry/exit masks)   ← Vectorized
+Step 2: Pre-compute position sizes per symbol/day         ← Vectorized
+Step 3: Simulate positions using vectorized state machine  ← Hybrid
+Step 4: Calculate P&L from entry/exit price matrices      ← Vectorized
+Step 5: Compute equity curve and metrics                  ← Vectorized
+```
+
+#### Implementation Plan
+
+**Step 3A.1 — Vectorize Entry/Exit Signal Detection**
+- Pre-compute boolean masks: `entries = signal_data.abs() > entry_threshold`
+- Pre-compute exit signals: `exits = exit_signal_data.abs() < exit_threshold` (using z-score in gated mode)
+- Pre-compute signal directions: `sides = np.where(signal_data < 0, 'long', 'short')`
+- Eliminate per-symbol `if` checks inside the day loop
+
+**Step 3A.2 — Vectorize Position Sizing**
+- Pre-compute volatility-scaled sizes for all symbols/dates using rolling operations:
+  ```python
+  log_rets = np.log(price_data / price_data.shift(1))
+  realized_vol = log_rets.rolling(60).std() * np.sqrt(252)
+  vol_sizes = (vol_target / realized_vol).clip(min_size, max_size)
+  ```
+- This eliminates the `_calculate_position_size()` call inside the loop
+
+**Step 3A.3 — Vectorize Exit Condition Checks**
+Convert all 6 exit conditions from per-position Python logic to matrix operations:
+- **Signal exit**: Already computed in Step 1
+- **Stop loss**: `pnl_matrix = (prices - entry_prices) / entry_prices; stop_hits = pnl_matrix < -stop_loss_pct`
+- **Take profit**: `tp_hits = pnl_matrix > take_profit_pct`
+- **Max holding**: `holding_matrix = day_index - entry_day_index; hold_hits = holding_matrix >= max_days`
+- **Trailing stop**: Requires running max (peak price tracking) — use `np.maximum.accumulate()` per position
+- **Time decay**: Combine holding matrix with P&L threshold check
+
+**Step 3A.4 — Hybrid State Machine (Core Loop)**
+The position limit (max 10 concurrent) and cash tracking create **sequential dependencies** that can't be fully vectorized. Use a **minimal loop** approach:
+- Pre-compute all signals, sizes, and exit conditions (Steps 1-3) as matrices
+- Loop day-by-day but only do **dictionary lookups and simple arithmetic** (no pandas indexing inside loop)
+- Use NumPy arrays instead of DataFrames inside the loop for 5-10x faster element access
+- Convert DataFrames to `.values` arrays before the loop, use integer indexing
+
+**Step 3A.5 — Vectorize Metrics Computation**
+Already mostly vectorized. Minor improvements:
+- Replace `max_drawdown_duration` loop with `np.diff` on drawdown sign changes
+- Replace trade statistics list comprehensions with vectorized operations on trades DataFrame
+- Compute `avg_exposure` and `max_positions` properly from position tracking matrix
+
+#### Expected Speedup
+
+| Component | Current | Vectorized | Speedup |
+|-----------|---------|------------|---------|
+| Entry/exit detection | O(days × symbols) Python | Matrix ops | ~50x |
+| Position sizing | Per-call Python function | Pre-computed matrix | ~20x |
+| Exit condition checks | 6 `if` branches per position | Boolean matrices | ~30x |
+| Core loop overhead | DataFrame `.loc[]` per day | NumPy `.values` arrays | ~5-10x |
+| **Overall** | ~10-20 min (20y) | **~20-60 sec (20y)** | **~10-50x** |
+
+#### Constraints (What NOT to Change)
+- **Preserve all Phase B features**: Gated signal mode, dynamic short confidence, trailing stop, time decay
+- **Preserve Trade objects**: Keep individual trade records for analytics
+- **Preserve BacktestResults API**: Same output interface, faster internals
+- **Preserve Kelly sizing**: Sequential dependency (uses trade history), keep in hybrid loop
+- **Preserve exit_signal_data**: Separate z-score for exits in gated mode
+
+---
+
+### Phase 3B: Performance & Risk Analytics Dashboard
+
+**Goal**: Add institutional-grade metrics to validate the strategy across 20 years of data and different market regimes. These metrics serve two purposes: (1) risk monitoring for live deployment, and (2) model validation across regimes (2008 crisis, 2020 COVID, bull/bear markets).
+
+#### B1. Risk Metrics (Essential for Live Deployment)
+
+These metrics go beyond Sharpe/Sortino to capture tail risk, which matters when deploying real capital:
+
+| Metric | Formula / Description | Why It Matters |
+|--------|----------------------|----------------|
+| **Value at Risk (VaR 95/99)** | 5th/1st percentile of daily returns | "On 95% of days, we lose less than X%" — regulatory standard |
+| **Conditional VaR (CVaR/ES)** | Mean of returns below VaR threshold | Expected loss in worst-case scenarios (tail risk) |
+| **Tail Ratio** | abs(95th percentile / 5th percentile) | >1.0 means bigger wins than losses in the tails |
+| **Skewness** | 3rd moment of return distribution | Negative = fat left tail (crash risk). Positive = good |
+| **Kurtosis** | 4th moment (excess) | >0 means fatter tails than normal distribution |
+| **Ulcer Index** | RMS of drawdown depth | Captures both depth AND duration of drawdowns |
+| **Omega Ratio** | Probability-weighted gains / losses | Better than Sharpe for non-normal distributions |
+
+**Implementation**: All computed from the daily returns series — pure NumPy vectorized, no loop required.
+
+#### B2. Rolling Performance Analytics
+
+Critical for detecting **edge decay** — whether the strategy alpha persists or degrades over time:
+
+| Metric | Window | Purpose |
+|--------|--------|---------|
+| **Rolling Sharpe** (63d, 126d, 252d) | Quarterly/Semi/Annual | Detect alpha decay or regime shifts |
+| **Rolling Win Rate** (100 trades) | Per-trade window | Consistency check across time |
+| **Rolling EV/Trade** (100 trades) | Per-trade window | Expected value stability |
+| **Rolling Max Drawdown** (252d) | Annual window | Worst-case risk over trailing year |
+| **Cumulative PnL by Year** | Annual buckets | Year-over-year consistency |
+
+**Implementation**: `pd.Series.rolling()` operations — fully vectorized.
+
+#### B3. Trade-Level Analytics
+
+Deeper trade analysis beyond avg win/loss:
+
+| Metric | Description | Purpose |
+|--------|-------------|---------|
+| **Consecutive Win/Loss Streaks** | Max streak, avg streak | Psychological risk, bankroll management |
+| **PnL Distribution by Exit Reason** | Box plot per exit type | Validate trailing stop, time decay effectiveness |
+| **Trade Duration Distribution** | Histogram of holding days | Understanding trade lifecycle |
+| **PnL by Side (Long vs Short)** | Separate distributions | Short alpha validation |
+| **Monthly Returns Heatmap** | Calendarized returns grid | Seasonality detection |
+| **Trade Clustering** | # trades per week/month | Overtrading detection |
+
+**Implementation**: All derived from the `trades` DataFrame — GroupBy + aggregation.
+
+#### B4. Turnover & Cost Analysis
+
+Essential for understanding real-world slippage and execution costs:
+
+| Metric | Description | Purpose |
+|--------|-------------|---------|
+| **Gross vs Net Returns** | Pre-commission vs post-commission | Commission impact quantification |
+| **Turnover Rate** | (Trades × avg_size) / portfolio_value / 2 | How much capital is recycled |
+| **Commission/Gross Profit Ratio** | Total commission / total gross P&L | Execution efficiency |
+| **Break-Even Commission** | Max commission where strategy stays profitable | Sensitivity to cost assumptions |
+| **Slippage Sensitivity** | Return at 0.05%, 0.10%, 0.15% slippage | Robustness to execution quality |
+
+**Implementation**: Computed from trade records — simple arithmetic.
+
+#### B5. Regime Analysis (Critical for 20-Year Validation)
+
+With 20 years of data spanning multiple market regimes, this is the most valuable new analysis:
+
+| Regime | Period | What to Measure |
+|--------|--------|----------------|
+| **GFC (2008-2009)** | Oct 2007 – Mar 2009 | Tail risk, max drawdown, short performance |
+| **Bull Recovery (2009-2015)** | Mar 2009 – mid 2015 | Long-side capture, alpha persistence |
+| **Vol Spike (Aug 2015)** | Aug 2015 – Oct 2015 | Event risk handling |
+| **Late Cycle (2018-2019)** | 2018-2019 | Performance in elevated uncertainty |
+| **COVID Crash (2020)** | Feb-Apr 2020 | Extreme vol, circuit breakers |
+| **Post-COVID Bull (2020-2021)** | Apr 2020 – Nov 2021 | Performance in low-vol uptrend |
+| **Rate Hiking (2022-2023)** | 2022-2023 | Regime shift, correlation changes |
+| **Current (2024-2026)** | 2024-present | Recent performance baseline |
+
+**Implementation**: 
+- Split equity curve and trades by date ranges
+- Compute metrics per regime period
+- Summary table: Sharpe, return, drawdown, win rate, trade count per regime
+
+#### Metrics NOT Included (and Why)
+
+| Skipped Metric | Reason |
+|---------------|--------|
+| **Information Ratio** | Requires benchmark selection (adds complexity for univariate model) |
+| **Treynor Ratio** | Requires beta estimation (market exposure model) |
+| **Fama-French Alpha** | Factor modeling is out of scope for Phase 3 |
+| **Herfindahl Index** | Concentration metric — less relevant with 258 equal-weight stocks |
+| **Autocorrelation of Returns** | Useful but low priority — can add later if needed |
+
+These are better suited for a multivariate/factor model (Phase 4+). For a univariate mean reversion strategy, the metrics above are comprehensive.
+
+---
+
+### Phase 3 Execution Order
+
+```
+Phase 3A: Vectorize Engine ✅ COMPLETED
+├── 3A.1: Pre-compute vol-scaled position sizes (pandas rolling → matrix) ✅
+├── 3A.2: Convert DataFrames to NumPy arrays before loop ✅
+├── 3A.3: Integer indexing inside loop (NumPy row slicing) ✅
+├── 3A.4: Hybrid state machine (minimal Python loop + NumPy) ✅
+├── 3A.5: Vectorize metrics (drawdown duration, trade stats) ✅
+├── 3A.6: Real avg_exposure and max_positions tracking ✅
+└── Benchmark: 3.07s for 5000 days × 258 symbols (1.29M datapoints)
+
+Phase 3B: Analytics Dashboard
+├── 3B.1: Risk metrics (VaR, CVaR, tail ratio, omega)
+├── 3B.2: Rolling analytics (Sharpe, win rate, EV/trade)
+├── 3B.3: Trade-level analytics (streaks, distributions, monthly heatmap)
+├── 3B.4: Turnover & cost analysis
+├── 3B.5: Regime analysis (critical for 20-year validation)
+└── Add new notebook cells with visualization
+
+Then: Run 20-Year Backtest
+├── Execute full pipeline on 258 stocks × 20 years
+├── Compare 2-year vs 20-year performance
+├── Validate across market regimes (2008, 2020, etc.)
+└── Assess whether Phase B performance holds across eras
+```
+
+### Phase 3A Results — Vectorized Engine
+
+**Completed**: Engine rewritten from DataFrame `.loc[]` per-iteration to pre-computed NumPy arrays.
+
+**Key Changes**:
+1. `_precompute_vol_sizes()` — New method: pre-computes volatility-scaled position sizes for ALL symbols/dates using `pd.DataFrame.rolling().std()` vectorized across all columns. Eliminates per-call `_calculate_position_size()` DataFrame slicing.
+2. `_calculate_position_size_fast()` — Simplified method that takes pre-computed vol_size, only does real computation for Kelly (sequential dependency).
+3. `run_backtest()` — Core loop rewritten:
+   - All DataFrames converted to `.values` NumPy arrays before loop
+   - `price_arr[i]` (NumPy row slice) instead of `price_data.loc[date]` (pandas label lookup)
+   - Symbol-to-index mapping for O(1) lookups
+   - `positions_arr`, `cash_arr`, `equity_arr` as NumPy arrays, not pandas Series
+   - Real `daily_exposure` and `daily_n_positions` tracking (replaced hardcoded placeholders)
+4. `_calculate_metrics()` — Drawdown duration vectorized with `np.diff` on sign changes instead of Python for-loop. Trade statistics use NumPy array masks instead of list comprehensions.
+
+**Performance Benchmark** (synthetic data, 5000 days × 258 symbols):
+- **New engine**: 3.07 seconds
+- **Old engine**: Estimated 10-20 minutes (based on 2-year timing extrapolated)
+- **Speedup**: ~200-400x
+
+**API Preserved**: `BacktestConfig`, `Trade`, `BacktestResults`, `run_backtest()` signature, `summary()` — all unchanged. Optimizer compatible without modification.
+
+#### Date Range Configuration (Added 2026-02-16)
+
+Added configurable date range to `config.yaml` for flexible backtest windowing:
+- `backtest.start_date`: Start date filter (null = use all data)
+- `backtest.end_date`: End date filter (null = use all data)
+- `ConfigLoader.get_date_range()`: Returns (start_ts, end_ts) tuple
+- Notebook `load_all_data()` cell applies date filter after loading, drops symbols with <100 bars
+- Timezone stripping added to data loading (Yahoo data has mixed tz info)
+
+### Key Risk: Overfitting Check
+
+**Phase B achieved 11.96 Sharpe on 2 years of data.** The 20-year backtest will be the true validation:
+- If Sharpe holds at 5+ across 20 years → genuine alpha, strategy is robust
+- If Sharpe drops to 1-3 → alpha exists but is regime-dependent, needs adaptation
+- If Sharpe drops below 1.0 → Phase B was overfit to 2024-2026 regime, needs fundamental rethink
+
+The regime analysis (3B.5) will reveal exactly which market conditions drive performance and which are dangerous.
+
+---
+
+### 20-Year Backtest Results (2006-02-14 → 2026-02-13)
+
+**Run Date**: 2026-02-16 | **Engine**: Vectorized (2.49s execution) | **Universe**: 294 loaded → 216 mean-reverting (Hurst < 0.5)
+
+#### Headline Numbers
+
+| Metric | 2-Year (Phase B) | 20-Year | Verdict |
+|--------|-------------------|---------|---------|
+| Total Return | 3,965.96% | 3,195.51% | Similar total, but spread over 20yr |
+| Annualized Return | ~800% | 19.13% | Compounding artifact — 19% CAGR is solid |
+| Sharpe Ratio | 11.96 | 2.47 | **Regime-dependent alpha** (1-3 range) |
+| Max Drawdown | 0.95% | 20.02% | **Single outlier trade caused 20% DD** |
+| Win Rate | 99.32% | 98.40% | Remarkably stable |
+| Total Trades | 147 | 812 | ~40/year avg |
+| Avg Exposure | 4.33% | 3.49% | **Massive capital underutilization** |
+| Profit Factor | 75.41 | 49.24 | Excellent |
+| EV/Trade | 4.84% | 4.38% | Consistent edge |
+
+**Verdict**: Sharpe 2.47 = **genuine alpha, regime-dependent**. Not overfit. But the 20% max DD from a single short squeeze and 3.5% exposure are the two biggest weaknesses.
+
+#### Annual Performance
+
+| Year | Trades | Equity Return | Avg PnL/Trade | Win Rate |
+|------|--------|--------------|---------------|----------|
+| 2006 | 4 | — | 0.59% | 75% |
+| 2007 | 8 | +2.82% | 3.49% | 100% |
+| 2008 | 10 | +4.11% | 4.05% | 100% |
+| 2009 | 10 | +4.80% | 4.71% | 100% |
+| 2010 | 6 | +2.20% | 3.63% | 100% |
+| 2011 | 10 | +4.21% | 4.14% | 100% |
+| 2012 | 6 | +1.54% | 2.56% | 100% |
+| 2013 | 4 | +1.01% | 2.52% | 100% |
+| 2014 | 18 | +4.38% | 2.38% | 100% |
+| 2015 | 18 | +7.08% | 3.82% | 100% |
+| 2016 | 20 | +7.41% | 3.59% | 95% |
+| 2017 | 16 | +3.11% | 1.92% | 94% |
+| 2018 | 34 | +15.07% | 4.15% | 100% |
+| 2019 | 32 | +13.90% | 4.08% | 94% |
+| 2020 | 48 | +35.46% | 6.37% | 100% |
+| 2021 | 69 | +10.91% | 1.88% | 94% |
+| 2022 | 79 | +61.85% | 6.11% | 97% |
+| 2023 | 80 | +40.46% | 4.32% | 98% |
+| 2024 | 127 | +61.64% | 3.81% | 100% |
+| 2025 | 188 | +162.35% | 5.25% | 100% |
+
+**Key Observation**: Trade frequency accelerates dramatically in recent years (4 trades/yr in 2006 → 188 in 2025). This is driven by (1) survivorship bias in the universe (more stocks passing Hurst filter with recent data) and (2) compounding capital enabling more concurrent positions.
+
+#### The PECO Catastrophe (Single Worst Trade)
+
+```
+PECO short | Entry: 2021-06-25 @ $7.23 → Exit: 2021-07-06 @ $21.69
+PnL: -200.60% (-$621,471) | Stop Loss hit after 11 days
+Signal: 2.4264 | Stock tripled in price (short squeeze / corporate event)
+```
+
+This single trade caused the ENTIRE 20.02% max drawdown. Without it, max DD would be ~1.27%.
+**This is the #1 risk to fix before live deployment.**
+
+#### Regime Performance (Crisis Resilience)
+
+| Regime | Trades | Win Rate | Avg PnL | Period Return |
+|--------|--------|----------|---------|---------------|
+| GFC (2007-2009) | 15 | 100% | +4.05% | +6.25% |
+| COVID Crash (Feb-Apr 2020) | 17 | 100% | +7.58% | +13.92% |
+| 2022 Bear | 79 | 97.5% | +6.11% | +61.85% |
+| Post-COVID Recovery | 99 | 96.0% | +3.05% | +31.73% |
+| 2024 Bull | 127 | 100% | +3.81% | +61.64% |
+
+**The strategy THRIVES in crises** — GFC and COVID had the highest per-trade returns. This makes sense: mean reversion is stronger when volatility spikes cause extreme dislocations.
+
+#### Signal Strength Analysis
+
+| Signal Quartile | Trades | Avg PnL | Win Rate |
+|----------------|--------|---------|----------|
+| Weak | 203 | 2.50% | 98.0% |
+| Moderate | 203 | 3.64% | 100.0% |
+| Strong | 203 | 3.75% | 99.0% |
+| Very Strong | 203 | 7.63% | 96.6% |
+
+**Insight**: Very strong signals have 3x the return but slightly lower win rate — they're capturing bigger dislocations with more risk. This validates signal-proportional sizing.
+
+---
+
+### Phase 3B Priorities (Data-Driven from 20-Year Results)
+
+Based on the 20-year analysis, here's the prioritized order for Phase 3B analytics:
+
+#### PRIORITY 1: Short Position Risk Controls (CRITICAL)
+**Why**: The -200% PECO trade is an existential risk. One short squeeze wiped $621K and caused the entire 20% max DD.
+**What to build**:
+- Hard dollar loss cap per trade ($X max loss regardless of %)
+- Short-specific position sizing (e.g., half the normal size for shorts)
+- Price acceleration filter (detect rapid 3-day moves before entry)
+- Corporate event / M&A screen (if feasible with available data)
+- Short squeeze detection: if stock gaps up >10% intraday, force exit
+
+#### PRIORITY 2: Capital Utilization Improvement (HIGH)
+**Why**: 3.49% avg exposure means 96.5% of capital sits idle. The strategy generates only 40 trades/year in early periods.
+**What to build**:
+- Exposure targeting: dynamically adjust thresholds or sizing to maintain 10-20% portfolio exposure
+- Multi-timeframe signals (e.g., weekly + daily)
+- Lower entry threshold when portfolio has few positions
+- Analyze why only 12.1% of days have entries — is the filter too strict?
+
+#### PRIORITY 3: Risk Metrics Dashboard (HIGH)
+**Why**: Need VaR/CVaR/tail metrics to quantify actual risk for live deployment.
+**What to build** (from B1 spec):
+- VaR 95/99, CVaR, Tail Ratio, Omega Ratio
+- Skewness, Kurtosis analysis
+- Ulcer Index
+
+#### PRIORITY 4: Rolling Analytics (MEDIUM)
+**Why**: Need to detect edge decay — the strategy clearly has regime sensitivity.
+**What to build** (from B2 spec):
+- Rolling Sharpe (63d, 126d, 252d)
+- Rolling win rate and EV/trade
+- Rolling max drawdown
+
+#### PRIORITY 5: Trade Clustering & Seasonality (MEDIUM)
+**Why**: Trade count varies 10x across years. Understanding clustering helps with capital allocation.
+**What to build** (from B3 spec):
+- Monthly returns heatmap
+- Trade clustering by week/month
+- Consecutive win/loss streak analysis
+
+#### PRIORITY 6: Cost Sensitivity (LOWER)
+**Why**: Commission is $2M but profit is $32M. Costs are manageable but should be validated.
+**What to build** (from B4 spec):
+- Slippage sensitivity curves
+- Break-even commission analysis
+
+---
+
+## Future Phases (Deferred)
+
+### Phase 4: ML Signal Filter
 **Goal**: Use machine learning to filter mean reversion signals and reduce false positives
 
 **Planned Approach**:
@@ -733,6 +1134,20 @@ backtest:
 4. Walk-forward training: Same methodology as optimizer (no look-ahead)
 5. Performance comparison: Filtered vs unfiltered signals
 6. Expected improvement: Higher Sharpe, lower max DD, better win rate, fewer trades
+
+### Phase 5: Multivariate / Cross-Sectional Strategies
+**Goal**: Explore multivariate strategies to complement the univariate mean reversion model
+
+**Motivation**: "I don't completely want to remove the idea of multivariate strategies. I'd like to explore that in the future if it enhances model performance or we run both models and compare results in different market conditions."
+
+**Potential Approaches**:
+1. **Pairs trading**: Cointegrated pairs with spread z-score signals
+2. **Cross-sectional mean reversion**: Relative value signals across sectors/factors
+3. **Factor-augmented signals**: Combine univariate signals with cross-asset momentum, volatility, or correlation regime indicators
+4. **Ensemble approach**: Run both univariate and multivariate models, blend signals based on market regime
+5. **Correlation regime switching**: Adapt strategy weights based on cross-sectional correlation structure
+
+**Evaluation Criteria**: Compare univariate vs multivariate on the same 20-year dataset using regime-segmented Sharpe, drawdown, and correlation of returns (ideally low-correlation for diversification benefit).
 
 ### Other Potential Improvements
 - Stricter Hurst filtering (0.4 instead of 0.5)

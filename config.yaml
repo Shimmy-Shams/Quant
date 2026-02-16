@@ -96,6 +96,10 @@ signals:
 # BACKTESTING
 # =============================================================================
 backtest:
+  # Date Range (null = use all available data)
+  start_date: null            # e.g., "2006-01-01" for 20-year backtest
+  end_date: null              # e.g., "2026-02-15"
+
   # Capital
   initial_capital: 1000000.0
 
