@@ -3,7 +3,7 @@
 **Environment**: Local VS Code (Windows)  
 **Claude Instance**: CLAUDE01 (Local)  
 **Paired With**: CLAUDE02.md (Codespaces - for development)  
-**Last Updated**: 2026-02-12 (end of Phase 1)
+**Last Updated**: 2026-02-15 (end of 20-year data collection)
 
 ---
 
@@ -14,11 +14,32 @@ Building a live algorithmic trading bot with Interactive Brokers paper trading i
 
 ## Current Status
 - TWS connected and verified (Paper Trading, port 7497)
-- Phase 1 COMPLETE -- all data infrastructure built, data collected, pushed to GitHub
+- Phase 1 COMPLETE -- IB data infrastructure built (2 years data)
+- Phase 2 COMPLETE (Codespaces/CLAUDE02) -- Mean reversion engine built, optimized (+27.2% return, Sharpe 0.82)
+- Phase 2B COMPLETE (Local) -- Yahoo Finance 20-year data collection for robust backtesting
 - Account is in CAD -- code handles multi-currency
-- Ready for Phase 2 (Mean Reversion Engine) on Codespaces
+- Ready for extended backtesting with 20 years of historical data
 
-**Completed** (2026-02-12)
+**Completed - Phase 2B** (2026-02-15)
+- Yahoo Finance data collector built (20-year historical data capability)
+- Config-driven architecture: centralized data collection configuration
+- Dynamic CPU detection: auto-detects available threads for parallel downloads
+- TWS-optional collection: Yahoo mode doesn't require TWS connection
+- 258/273 tickers collected successfully (20 years daily OHLCV each)
+- IB-compatible Parquet format: seamless integration with Phase 2 mean reversion code
+- 12 tickers failed (delisted stocks: ANSS, SMAR, CSWI, GMS, PPBI, WBA, HES, SGEN, CEIX, ARCH, TCS, ATVI)
+- Collection time: 26.6 seconds with 8 workers (0.1s per ticker)
+- Total data: ~5,032 bars per ticker (20 years) vs previous 2-year limit
+
+**Completed - Phase 2** (2026-02-13, CLAUDE02/Codespaces)
+- Mean reversion engine: z-score signals with dynamic thresholds
+- Backtesting framework: position tracking, PnL calculation, metrics
+- Parameter optimization: Optuna-based grid search (100+ trials)
+- Critical bug fixes: 6 major issues (position sizing, signal timing, exits, slippage)
+- Optimized parameters: window=65, z_entry=2.5, z_exit=0.3, max_hold=15
+- Performance: +27.2% return, Sharpe 0.82, Max DD -8.7%, Win Rate 57.3%
+
+**Completed - Phase 1** (2026-02-12)
 - Dynamic universe built: 312 stocks across 4 indices (100/index, 30 for Dow)
 - Historical data collected: 293 tickers, 2 years daily OHLCV, 8.4 MB Parquet
 - Options snapshots: 8 files for ETFs (SPY, QQQ, DIA, IWM)
@@ -26,7 +47,7 @@ Building a live algorithmic trading bot with Interactive Brokers paper trading i
 - Options collector refactored: batch qualify + batch market data + ATM strike filtering
 - All data pushed to GitHub for Codespaces access
 
-**Current Phase**: Phase 2 -- Mean Reversion Engine (next)
+**Current Phase**: Extended Backtesting with 20-year data (next)
 
 ## Strategy Direction (CONFIRMED)
 
@@ -88,10 +109,41 @@ Multi-criteria filtering with live constituent fetching:
 4. Backtest on 2-year historical data
 5. Parameter optimization for swing timeframe
 
-### Phase 2: Mean Reversion Engine (NEXT -- Codespaces)
-- [ ] Statistical mean reversion signals (z-score based)
-- [ ] Backtest on 2-year historical data (293 tickers available)
-- [ ] Parameter optimization for swing timeframe
+### Phase 2: Mean Reversion Engine (COMPLETE -- Codespaces/CLAUDE02)
+- [x] Statistical mean reversion signals (z-score based)
+- [x] Backtest on 2-year historical data (293 tickers)
+- [x] Parameter optimization for swing timeframe
+- [x] Critical bug fixes (position sizing, signal timing, exits, slippage)
+- [x] Performance metrics: +27.2% return, Sharpe 0.82, Max DD -8.7%
+
+### Phase 2B: Extended Historical Data Collection (COMPLETE -- Local)
+- [x] Yahoo Finance data collector module (20-year capability vs IB's 2-year limit)
+- [x] Config-driven architecture (centralized data_collection_config.yaml)
+- [x] Dynamic CPU detection (auto worker count optimization)
+- [x] TWS-optional collection (Yahoo mode runs without IB connection)
+- [x] IB-compatible Parquet format (seamless integration with existing code)
+- [x] Smart caching (skips tickers with 10+ years existing data)
+- [x] 258 tickers collected: 20 years daily OHLCV (~5,032 bars each)
+- [x] Collection performance: 26.6s total (0.1s per ticker, 8 workers)
+
+**Yahoo Finance Collector Architecture:**
+- Module: `src/data/yahoo_collector.py` (336 lines)
+- Config: `src/config/data_collection_config.yaml` (centralized parameters)
+- Notebook: `src/main_data_collector.ipynb` (setup, test, full collection, status)
+- Features:
+  - Parallel downloads via ThreadPoolExecutor (dynamic worker count)
+  - Identical Parquet schema to IB collector (OHLCV columns match)
+  - Configurable source toggle: "yahoo" (20y) or "ib" (2y)
+  - Universe selection: "dynamic" (273 tickers), "etf" (4), or "custom"
+  - Auto-detects CPU cores: `max_workers: "auto"` -> `os.cpu_count()`
+  - Smart caching: `min_years: 10` threshold (skips re-download)
+- Data Quality:
+  - 258/273 successful downloads (94.5% success rate)
+  - Failed tickers: delisted stocks (ANSS, SMAR, CSWI, GMS, PPBI, WBA, HES, SGEN, CEIX, ARCH, TCS, ATVI)
+  - Average: ~5,032 bars per ticker (20 years daily data)
+  - Date range: 2006-02-15 to 2026-02-15 (for most tickers)
+
+**Next Action:** Push 20-year data to GitHub, run extended backtest in Codespaces to validate mean reversion engine across 20-year period
 
 ### Phase 3: ML Filter
 - [ ] Feature engineering from market data
@@ -150,26 +202,30 @@ src/main.ipynb — 11 main sections:
 Quant/
 ├── CLAUDE01.md / CLAUDE02.md        # Context & planning docs
 ├── .env / .env.example              # Configuration
-├── requirements.txt                 # Python dependencies
+├── requirements.txt                 # Python dependencies (includes yfinance>=0.2.32)
 ├── data/                            # Parquet storage (gitignored for large files)
-│   ├── historical/daily/*.parquet   # OHLCV bars
+│   ├── historical/daily/*.parquet   # OHLCV bars (20 years from Yahoo, 2 years from IB)
 │   ├── snapshots/options/*.parquet  # Options chains
 │   └── universe/*.parquet           # Dynamic universe snapshots
 ├── docs/
 │   ├── IB_SETUP.md                  # IB Gateway/TWS setup guide
 │   └── TWS_SETUP.md                 # TWS-specific instructions
 ├── src/
-│   ├── config/config.py             # Config class (.env loader)
+│   ├── config/
+│   │   ├── config.py                      # Config class (.env loader)
+│   │   └── data_collection_config.yaml    # Data collection parameters (NEW)
 │   ├── connection/ib_connection.py  # Smart reconnect, asyncio patching
 │   ├── data/
 │   │   ├── universe_builder.py      # Single source: lists + functions + UniverseBuilder
-│   │   ├── collector.py             # Historical data downloader
+│   │   ├── collector.py             # IB historical data downloader (2 years max)
+│   │   ├── yahoo_collector.py       # Yahoo Finance downloader (20 years, NEW)
 │   │   ├── streamer.py              # Real-time quote streaming
 │   │   └── options.py               # Options chain collector
 │   ├── strategies/                  # Future: Mean reversion, ML filter
 │   ├── backtest/                    # Future: Backtesting engine
 │   ├── execution/                   # Future: Order management
-│   ├── main.ipynb                   # Main workflow interface
+│   ├── main.ipynb                   # TWS-connected workflow
+│   ├── main_data_collector.ipynb    # Data collection workflow (Yahoo/IB, NEW)
 │   └── test_connection.py           # Standalone connection test
 ```
 
@@ -177,9 +233,16 @@ Quant/
 - Auto-Reload: Edit .py -> rerun cell (no kernel restart)
 - **TWS Ports:** Paper=7497, Live=7496
 - **IB Gateway Ports:** Paper=4002, Live=4001
+- **Data Sources:**
+  - IB TWS: 2 years daily historical max (11s rate limit between requests)
+  - Yahoo Finance: 20+ years daily historical (parallel downloads, ~0.1s per ticker)
 - Storage: Parquet via pyarrow (10-50x faster than CSV)
-- Rate Limit: 11 sec between IB historical requests
-- Deps: ib_insync, pandas, numpy, matplotlib, plotly, python-dotenv, pyarrow
+- **Data Collection Config:** src/config/data_collection_config.yaml
+  - Source toggle: "yahoo" or "ib"
+  - Period: "20y" (Yahoo) or "2 Y" (IB)
+  - Workers: "auto" (detects CPU cores) or specific count
+  - Universe: "dynamic" (273 tickers), "etf" (4), or "custom"
+- Deps: ib_insync, yfinance, pandas, numpy, matplotlib, plotly, python-dotenv, pyarrow
 - **Multi-currency:** Account values work with USD, CAD, EUR, GBP
 
 ## Important Reminders

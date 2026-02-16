@@ -1,0 +1,77 @@
+# ============================================================================
+# Data Collection Configuration
+# ============================================================================
+# This file contains all configurable parameters for historical data collection
+# Modify these values instead of hardcoding in scripts/notebooks
+
+# Data Source Selection
+# ----------------------
+data_source: "yahoo"  # Options: "yahoo" (no TWS needed) or "ib" (requires TWS connection)
+
+# Yahoo Finance Settings
+# ----------------------
+yahoo:
+  period: "20y"              # Period to download: "1y", "5y", "10y", "20y", "max"
+  max_workers: "auto"        # Parallel download threads: "auto" (detect CPU cores) or number (e.g., 5)
+  min_years_cache: 10        # Minimum years required before skipping re-download
+  update_existing: false     # Set true to force re-download all tickers
+
+# Interactive Brokers Settings
+# -----------------------------
+ib:
+  duration: "2 Y"            # Max period IB API supports for daily bars
+  bar_size: "1 day"          # Bar size for historical data
+  end_datetime: ""           # End date (empty = now)
+  use_rth: true              # Regular trading hours only
+  format_date: 1             # Date format (1 = yyyyMMdd HH:mm:ss)
+  
+# Universe Settings
+# -----------------
+universe:
+  # Which universe to use for collection
+  source: "dynamic"          # Options: "dynamic" (from universe_builder), "etf", "custom"
+  
+  # ETF list (quick test - 4 tickers)
+  etf_tickers:
+    - SPY
+    - QQQ
+    - DIA
+    - IWM
+  
+  # Custom ticker list (if source = "custom")
+  custom_tickers:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - NVDA
+  
+  # Dynamic universe options
+  include_etfs: true         # Include ETFs with universe tickers
+  indices:                   # Which indices to include
+    - SP500
+    - NASDAQ
+    - DOW
+    - RUSSELL
+
+# Data Storage
+# ------------
+storage:
+  format: "parquet"          # File format (parquet recommended)
+  compression: "snappy"      # Compression: null, "snappy", "gzip", "brotli"
+  overwrite_duplicates: false  # Overwrite existing files
+
+# Performance & Limits
+# --------------------
+performance:
+  batch_size: 50             # Tickers to process per batch
+  retry_failed: true         # Retry failed downloads
+  max_retries: 3             # Max retry attempts per ticker
+  retry_delay: 2             # Seconds between retries
+  
+# Logging
+# -------
+logging:
+  level: "INFO"              # DEBUG, INFO, WARNING, ERROR
+  show_progress: true        # Show detailed progress for each ticker
+  save_failed_list: true     # Save list of failed tickers to file
