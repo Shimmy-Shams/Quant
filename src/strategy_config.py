@@ -117,6 +117,7 @@ class ConfigLoader:
             min_lookback=self.get('signals.zscore.min_lookback', 10),
             max_lookback=self.get('signals.zscore.max_lookback', 252),
             default_lookback=self.get('signals.zscore.default_lookback', 20),
+            use_log_prices=self.get('signals.use_log_prices', True),
 
             # Hurst
             hurst_threshold=self.get('signals.hurst.threshold', 0.5),
@@ -138,7 +139,30 @@ class ConfigLoader:
 
             # Regime
             vol_lookback=self.get('signals.volatility_regime.short_lookback', 60),
-            vol_long_lookback=self.get('signals.volatility_regime.long_lookback', 252)
+            vol_long_lookback=self.get('signals.volatility_regime.long_lookback', 252),
+
+            # Kalman Filter
+            use_kalman=self.get('signals.kalman.use_kalman', True),
+            kalman_transition_cov=self.get('signals.kalman.transition_covariance', 0.001),
+            kalman_observation_cov=self.get('signals.kalman.observation_covariance', 1.0),
+            kalman_initial_cov=self.get('signals.kalman.initial_covariance', 1.0),
+
+            # OU Prediction
+            use_predicted_return=self.get('signals.ou_prediction.use_predicted_return', True),
+            ou_hurdle_rate=self.get('signals.ou_prediction.hurdle_rate', 0.005),
+            ou_prediction_horizon=self.get('signals.ou_prediction.prediction_horizon_days'),
+
+            # Signal composition mode (Phase B.1)
+            signal_mode=self.get('signals.signal_mode', 'gated'),
+            gate_signal=self.get('signals.gate_signal', 'rsi_divergence'),
+            zscore_boost_factor=self.get('signals.zscore_boost_factor', 0.5),
+
+            # Dynamic short confidence filter (Phase B.2)
+            use_dynamic_short_filter=self.get('signals.dynamic_short_filter.enabled', True),
+            short_trend_lookback=self.get('signals.dynamic_short_filter.trend_lookback', 50),
+            short_momentum_fast=self.get('signals.dynamic_short_filter.momentum_fast_lookback', 5),
+            short_momentum_slow=self.get('signals.dynamic_short_filter.momentum_slow_lookback', 20),
+            short_min_confidence=self.get('signals.dynamic_short_filter.min_confidence', 0.3),
         )
 
     def to_backtest_config(self):
@@ -152,16 +176,44 @@ class ConfigLoader:
 
         return BacktestConfig(
             initial_capital=self.get('backtest.initial_capital', 100000.0),
+            use_log_returns=self.get('backtest.use_log_returns', True),
             commission_pct=self.get('backtest.commission_pct', 0.001),
             slippage_pct=self.get('backtest.slippage_pct', 0.0005),
             position_size_method=self.get('backtest.position_size_method', 'equal_weight'),
             max_position_size=self.get('backtest.max_position_size', 0.1),
             max_total_exposure=self.get('backtest.max_total_exposure', 1.0),
+            # Signal-proportional params
+            signal_prop_base_size=self.get('backtest.signal_proportional.base_size', 0.03),
+            signal_prop_scale_factor=self.get('backtest.signal_proportional.scale_factor', 0.02),
+            # Volatility-scaled params
+            vol_target=self.get('backtest.volatility_scaling.target_volatility', 0.15),
+            vol_lookback=self.get('backtest.volatility_scaling.vol_lookback', 60),
+            vol_min_size=self.get('backtest.volatility_scaling.min_size', 0.02),
+            vol_max_size=self.get('backtest.volatility_scaling.max_size', 0.10),
+            # Kelly params
+            kelly_fraction=self.get('backtest.kelly.fraction', 0.25),
+            kelly_lookback_trades=self.get('backtest.kelly.lookback_trades', 50),
+            kelly_min_trades=self.get('backtest.kelly.min_trades_required', 20),
+            kelly_min_size=self.get('backtest.kelly.min_size', 0.02),
+            kelly_max_size=self.get('backtest.kelly.max_size', 0.10),
+            # Thresholds
             entry_threshold=self.get('backtest.entry_threshold', 2.0),
             exit_threshold=self.get('backtest.exit_threshold', 0.5),
             stop_loss_pct=self.get('backtest.stop_loss_pct'),
             take_profit_pct=self.get('backtest.take_profit_pct'),
             max_holding_days=self.get('backtest.max_holding_days'),
+
+            # Trailing stop (Phase B.3)
+            use_trailing_stop=self.get('backtest.trailing_stop.enabled', False),
+            trailing_stop_pct=self.get('backtest.trailing_stop.trail_pct', 0.05),
+            trailing_stop_activation=self.get('backtest.trailing_stop.activation_pct', 0.02),
+
+            # Time decay exit (Phase B.3)
+            use_time_decay_exit=self.get('backtest.time_decay_exit.enabled', False),
+            time_decay_days=self.get('backtest.time_decay_exit.check_after_days', 10),
+            time_decay_threshold=self.get('backtest.time_decay_exit.flat_threshold', 0.01),
+
+            # Regime filter
             use_regime_filter=self.get('backtest.use_regime_filter', True),
             min_regime_multiplier=self.get('backtest.min_regime_multiplier', 0.5)
         )
@@ -180,13 +232,21 @@ class ConfigLoader:
             test_period_days=self.get('optimization.test_period_days', 126),
             step_days=self.get('optimization.step_days', 63),
             method=self.get('optimization.method', 'grid'),
-            n_trials=self.get('optimization.n_trials', 100),
+            n_trials=self.get('optimization.n_trials', 50),
+            n_jobs=self.get('optimization.n_jobs', -1),
             objective_metric=self.get('optimization.objective_metric', 'sharpe_ratio'),
+            # Grid search ranges
             entry_threshold_range=self.get('optimization.param_ranges.entry_threshold', [1.5, 2.0, 2.5, 3.0]),
             exit_threshold_range=self.get('optimization.param_ranges.exit_threshold', [0.3, 0.5, 0.7]),
             stop_loss_range=self.get('optimization.param_ranges.stop_loss_pct', [None, 0.05, 0.10]),
             take_profit_range=self.get('optimization.param_ranges.take_profit_pct', [None, 0.10, 0.15]),
             max_holding_range=self.get('optimization.param_ranges.max_holding_days', [None, 10, 20]),
+            # Bayesian ranges (read from config, with sensible defaults)
+            bayesian_entry_range=tuple(self.get('optimization.bayesian_ranges.entry_threshold', [1.0, 4.0])),
+            bayesian_exit_range=tuple(self.get('optimization.bayesian_ranges.exit_threshold', [0.1, 1.5])),
+            bayesian_stop_loss_choices=self.get('optimization.bayesian_ranges.stop_loss_pct', [None, 0.05, 0.10, 0.15]),
+            bayesian_take_profit_choices=self.get('optimization.bayesian_ranges.take_profit_pct', [None, 0.10, 0.15, 0.20]),
+            bayesian_max_holding_choices=self.get('optimization.bayesian_ranges.max_holding_days', [None, 10, 20, 30]),
             min_trades=self.get('optimization.min_trades', 10)
         )
 

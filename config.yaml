@@ -16,6 +16,9 @@ data:
 # SIGNAL GENERATION
 # =============================================================================
 signals:
+  # Use log prices for z-score computation (more stationary than raw prices)
+  use_log_prices: true
+
   # Adaptive Z-Score
   zscore:
     min_lookback: 10        # Minimum lookback window (days)
@@ -29,7 +32,7 @@ signals:
 
   # Bollinger Bands
   bollinger:
-    std_multiplier: 4.0     # Standard deviation multiplier
+    std_multiplier: 2.0     # Standard deviation multiplier
     lookback: 20            # Lookback window (days)
     volume_multiplier: 1.5  # Required volume spike (1.5x = 150% of average)
 
@@ -49,12 +52,44 @@ signals:
     short_lookback: 60      # Short-term volatility window
     long_lookback: 252      # Long-term volatility window
 
+  # Kalman Filter for dynamic mean-reversion estimation
+  kalman:
+    use_kalman: true          # Use Kalman filter instead of rolling z-score
+    transition_covariance: 0.00001   # Q: how fast true mean drifts
+    observation_covariance: 0.0002   # R: daily log-return variance (~1.5% vol)
+    initial_mean_estimate: null      # null = use first price as initial estimate
+    initial_covariance: 0.001        # P0: initial uncertainty in estimate
+
+  # OU Predicted Return (makes strategy predictive)
+  ou_prediction:
+    use_predicted_return: true     # Use OU model to predict expected return
+    hurdle_rate: 0.005             # Min expected return to enter (0.5%)
+    prediction_horizon_days: null  # null = use half-life as horizon
+
   # Composite Signal Weights
   # These are confirmation multipliers applied to the z-score
+  # PHASE A OPTIMIZATION: Focus on RSI divergence (only profitable signal)
   composite_weights:
-    bollinger: 0.25         # Bollinger confirmation weight
-    rsi_divergence: 0.25    # RSI divergence confirmation weight
-    rsi_level: 0.25         # RSI level confirmation weight
+    bollinger: 0.0          # Disabled - was destroying returns (-66%)
+    rsi_divergence: 0.75    # Primary alpha signal (6130% return, 13.46 Sharpe)
+    rsi_level: 0.0          # Disabled - net zero contribution
+
+  # Signal Composition Mode (Phase B.1)
+  # 'confirmation': z-score is primary, other signals boost/dampen (legacy)
+  # 'gated': gate signal controls entry, z-score adds conviction (recommended)
+  signal_mode: "gated"
+  gate_signal: "rsi_divergence"     # Which signal acts as the entry gate
+  zscore_boost_factor: 0.5          # How much |zscore| boosts gated signal (0-1)
+
+  # Dynamic Short Confidence Filter (Phase B.2)
+  # Statistically adapts short entry requirements to market conditions
+  # Uses trend extension, momentum deceleration, and vol regime — no manual tweaking
+  dynamic_short_filter:
+    enabled: true
+    trend_lookback: 50              # MA period for trend assessment
+    momentum_fast_lookback: 5       # Fast momentum window (days)
+    momentum_slow_lookback: 20      # Slow momentum window (days)
+    min_confidence: 0.3             # Min confidence score to allow short entries (0-1)
 
 
 # =============================================================================
@@ -64,23 +99,61 @@ backtest:
   # Capital
   initial_capital: 1000000.0
 
+  # Returns calculation method
+  use_log_returns: true     # Use log returns for metrics (Sharpe, Sortino, etc.)
+
   # Transaction Costs
   commission_pct: 0.001     # 0.1% commission per trade
   slippage_pct: 0.0005      # 0.05% slippage
 
   # Position Sizing
-  position_size_method: "equal_weight"  # Options: equal_weight, kelly, volatility_scaled
+  # Options: equal_weight, signal_proportional, volatility_scaled, kelly
+  position_size_method: "volatility_scaled"
   max_position_size: 0.1    # Max 10% of capital per position
   max_total_exposure: 1.0   # Max 100% total exposure
 
+  # Signal-proportional sizing params
+  signal_proportional:
+    base_size: 0.10         # Base position size (3% of equity)
+    scale_factor: 0.02      # Additional size per unit of |signal| above threshold
+
+  # Volatility-scaled sizing params
+  volatility_scaling:
+    target_volatility: 0.15   # Annualized target vol per position (15%)
+    vol_lookback: 60          # Days for realized vol estimation
+    min_size: 0.02            # Minimum position size (2% of equity)
+    max_size: 0.10            # Maximum position size (10% of equity)
+
+  # Kelly criterion params
+  kelly:
+    fraction: 0.25            # Fractional Kelly (0.25 = quarter-Kelly, safer)
+    lookback_trades: 50       # Rolling window of trades for estimating win rate/payoff
+    min_trades_required: 20   # Minimum trades before Kelly kicks in (use equal_weight before)
+    min_size: 0.02            # Floor on Kelly-computed size
+    max_size: 0.10            # Cap on Kelly-computed size
+
   # Entry/Exit Thresholds
-  entry_threshold: 3.0      # Enter when |signal| > threshold (z-score units)
-  exit_threshold: 0.5        # Exit when |signal| < threshold
+  # PHASE B.1: Threshold for gated mode (signal magnitude = 1 + boost * |zscore|)
+  entry_threshold: 1.5      # Enter when |signal| > threshold (gated mode: ~1-3 range)
+  exit_threshold: 0.8166403752061433        # Exit when |signal| < threshold
 
   # Risk Management
-  stop_loss_pct: null        # Stop loss (null = disabled, 0.05 = 5%)
-  take_profit_pct: null      # Take profit (null = disabled, 0.25 = 25%)
-  max_holding_days: 10       # Max holding period in days (null = hold until signal)
+  # PHASE A OPTIMIZATION: Enabled 8% stop to address avg loss > avg win issue
+  stop_loss_pct: 0.08        # Stop loss (null = disabled, 0.05 = 5%)
+  take_profit_pct: 0.15      # Take profit (null = disabled, 0.25 = 25%)
+  max_holding_days: 30       # Max holding period in days (null = hold until signal)
+
+  # Trailing Stop (Phase B.3 - locks in profits after activation)
+  trailing_stop:
+    enabled: true
+    trail_pct: 0.05                 # Trail at 5% from peak profit
+    activation_pct: 0.02            # Activate after 2% profit achieved
+
+  # Time Decay Exit (Phase B.3 - exit flat/failed setups)
+  time_decay_exit:
+    enabled: true
+    check_after_days: 10            # Check after N days in trade
+    flat_threshold: 0.01            # Exit if |pnl| < 1% after check_after_days
 
   # Regime Filter
   use_regime_filter: true
@@ -98,10 +171,12 @@ optimization:
 
   # Method
   method: "bayesian"            # Options: grid, bayesian
-  n_trials: 100             # Number of trials for Bayesian optimization
+  n_trials: 50               # Number of trials for Bayesian optimization (TPE converges well at 50)
+  n_jobs: -1                 # Parallel trials (-1 = all CPU cores, 1 = sequential)
 
   # Objective
-  objective_metric: "total_return"  # Options: sharpe_ratio, total_return, calmar_ratio, sortino_ratio
+  # PHASE A OPTIMIZATION: Changed to sharpe_ratio (rewards risk-adjusted returns)
+  objective_metric: "sharpe_ratio"  # Options: sharpe_ratio, total_return, calmar_ratio, sortino_ratio
 
   # Minimum Trades
   min_trades: 10            # Minimum trades required for valid backtest

@@ -10,10 +10,12 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Callable, Any
 from dataclasses import dataclass, field
 from itertools import product
+import time
 import warnings
 
 try:
     import optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -33,7 +35,8 @@ class OptimizationConfig:
 
     # Optimization method
     method: str = 'grid'  # 'grid' or 'bayesian'
-    n_trials: int = 100   # For Bayesian optimization
+    n_trials: int = 50    # For Bayesian optimization (TPE converges well at 50)
+    n_jobs: int = -1       # Parallel trials (-1 = all CPU cores, 1 = sequential)
 
     # Objective metric
     objective_metric: str = 'sharpe_ratio'  # 'sharpe_ratio', 'total_return', 'calmar_ratio'
@@ -44,6 +47,13 @@ class OptimizationConfig:
     stop_loss_range: List[Optional[float]] = field(default_factory=lambda: [None, 0.05, 0.10])
     take_profit_range: List[Optional[float]] = field(default_factory=lambda: [None, 0.10, 0.15])
     max_holding_range: List[Optional[int]] = field(default_factory=lambda: [None, 10, 20])
+
+    # Bayesian optimization ranges (continuous params use [min, max], categorical use list)
+    bayesian_entry_range: Tuple[float, float] = (1.0, 4.0)
+    bayesian_exit_range: Tuple[float, float] = (0.1, 1.5)
+    bayesian_stop_loss_choices: List[Optional[float]] = field(default_factory=lambda: [None, 0.05, 0.10, 0.15])
+    bayesian_take_profit_choices: List[Optional[float]] = field(default_factory=lambda: [None, 0.10, 0.15, 0.20])
+    bayesian_max_holding_choices: List[Optional[int]] = field(default_factory=lambda: [None, 10, 20, 30])
 
     # Signal weight ranges (for Bayesian optimization)
     weight_ranges: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
@@ -98,15 +108,19 @@ class ParameterOptimizer:
     Parameter optimizer with walk-forward analysis
     """
 
-    def __init__(self, config: Optional[OptimizationConfig] = None):
+    def __init__(self, config: Optional[OptimizationConfig] = None,
+                 base_backtest_config: Optional[BacktestConfig] = None):
         self.config = config or OptimizationConfig()
+        self._base_bt_config = base_backtest_config
+        self._exit_signal_data = None  # Separate exit signal for gated mode
 
     def walk_forward_optimization(
         self,
         price_data: pd.DataFrame,
         signal_generator: Callable[[Dict], pd.DataFrame],
         volume_data: Optional[pd.DataFrame] = None,
-        regime_data: Optional[pd.DataFrame] = None
+        regime_data: Optional[pd.DataFrame] = None,
+        exit_signal_data: Optional[pd.DataFrame] = None
     ) -> OptimizationResults:
         """
         Run walk-forward optimization
@@ -116,10 +130,12 @@ class ParameterOptimizer:
             signal_generator: Function that takes params and returns signal DataFrame
             volume_data: Optional volume data
             regime_data: Optional regime data
+            exit_signal_data: Optional separate signal for exit decisions (e.g., raw z-score)
 
         Returns:
             OptimizationResults
         """
+        self._exit_signal_data = exit_signal_data
         dates = price_data.index
         wf_results = []
 
@@ -299,14 +315,21 @@ class ParameterOptimizer:
     ) -> Tuple[Dict, float]:
         """Bayesian optimization using Optuna"""
 
+        # Read ranges from config
+        entry_lo, entry_hi = self.config.bayesian_entry_range
+        exit_lo, exit_hi = self.config.bayesian_exit_range
+        sl_choices = self.config.bayesian_stop_loss_choices
+        tp_choices = self.config.bayesian_take_profit_choices
+        mh_choices = self.config.bayesian_max_holding_choices
+
         def objective(trial):
-            # Sample parameters
+            # Sample parameters using config-driven ranges
             params = {
-                'entry_threshold': trial.suggest_float('entry_threshold', 1.0, 4.0),
-                'exit_threshold': trial.suggest_float('exit_threshold', 0.1, 1.5),
-                'stop_loss_pct': trial.suggest_categorical('stop_loss_pct', [None, 0.05, 0.10, 0.15]),
-                'take_profit_pct': trial.suggest_categorical('take_profit_pct', [None, 0.10, 0.15, 0.20]),
-                'max_holding_days': trial.suggest_categorical('max_holding_days', [None, 10, 20, 30])
+                'entry_threshold': trial.suggest_float('entry_threshold', entry_lo, entry_hi),
+                'exit_threshold': trial.suggest_float('exit_threshold', exit_lo, exit_hi),
+                'stop_loss_pct': trial.suggest_categorical('stop_loss_pct', sl_choices),
+                'take_profit_pct': trial.suggest_categorical('take_profit_pct', tp_choices),
+                'max_holding_days': trial.suggest_categorical('max_holding_days', mh_choices)
             }
 
             # Run backtest
@@ -321,11 +344,29 @@ class ParameterOptimizer:
             # Return objective metric
             return self._get_metric(results, self.config.objective_metric)
 
-        # Create study
-        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler())
+        # Create study (suppress Optuna info logs, show only warnings)
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=optuna.samplers.TPESampler(seed=42)
+        )
 
-        # Optimize
-        study.optimize(objective, n_trials=self.config.n_trials, show_progress_bar=False)
+        # Determine parallelism
+        n_jobs = self.config.n_jobs
+        n_trials = self.config.n_trials
+
+        print(f"  Bayesian optimization: {n_trials} trials, n_jobs={n_jobs}")
+        t0 = time.time()
+
+        # Optimize with parallel trials
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            n_jobs=n_jobs,
+            show_progress_bar=True
+        )
+
+        elapsed = time.time() - t0
+        print(f"  Completed in {elapsed:.1f}s ({elapsed/n_trials:.2f}s/trial)")
 
         # Get best params
         best_params = study.best_params
@@ -341,22 +382,33 @@ class ParameterOptimizer:
         volume_data: Optional[pd.DataFrame],
         regime_data: Optional[pd.DataFrame]
     ) -> BacktestResults:
-        """Run backtest with specific parameters"""
+        """Run backtest with specific parameters, inheriting sizing/return config from base"""
         # Generate signals (signal generator should not depend on backtest params)
         signal_data = signal_generator(params)
 
-        # Create backtest config
-        bt_config = BacktestConfig(
-            entry_threshold=params.get('entry_threshold', 2.0),
-            exit_threshold=params.get('exit_threshold', 0.5),
-            stop_loss_pct=params.get('stop_loss_pct'),
-            take_profit_pct=params.get('take_profit_pct'),
-            max_holding_days=params.get('max_holding_days')
-        )
+        # Start from base config if provided, override with optimized params
+        if self._base_bt_config is not None:
+            from dataclasses import asdict
+            base_dict = asdict(self._base_bt_config)
+            # Override only the params being optimized
+            base_dict['entry_threshold'] = params.get('entry_threshold', base_dict.get('entry_threshold', 2.0))
+            base_dict['exit_threshold'] = params.get('exit_threshold', base_dict.get('exit_threshold', 0.5))
+            base_dict['stop_loss_pct'] = params.get('stop_loss_pct', base_dict.get('stop_loss_pct'))
+            base_dict['take_profit_pct'] = params.get('take_profit_pct', base_dict.get('take_profit_pct'))
+            base_dict['max_holding_days'] = params.get('max_holding_days', base_dict.get('max_holding_days'))
+            bt_config = BacktestConfig(**base_dict)
+        else:
+            bt_config = BacktestConfig(
+                entry_threshold=params.get('entry_threshold', 2.0),
+                exit_threshold=params.get('exit_threshold', 0.5),
+                stop_loss_pct=params.get('stop_loss_pct'),
+                take_profit_pct=params.get('take_profit_pct'),
+                max_holding_days=params.get('max_holding_days')
+            )
 
         # Run backtest
         engine = BacktestEngine(bt_config)
-        results = engine.run_backtest(price_data, signal_data, volume_data, regime_data)
+        results = engine.run_backtest(price_data, signal_data, volume_data, regime_data, self._exit_signal_data)
 
         return results
 
