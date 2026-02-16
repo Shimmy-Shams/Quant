@@ -109,7 +109,10 @@ class AlpacaDataAdapter:
                 bars = self.data_client.get_stock_bars(request)
 
                 for symbol in batch:
-                    symbol_bars = bars[symbol] if symbol in bars else []
+                    try:
+                        symbol_bars = bars[symbol]
+                    except (KeyError, IndexError):
+                        symbol_bars = []
                     if symbol_bars:
                         records = [{
                             'date': bar.timestamp.date(),
@@ -144,7 +147,10 @@ class AlpacaDataAdapter:
                             feed=self.data_feed,
                         )
                         bars = self.data_client.get_stock_bars(request)
-                        symbol_bars = bars[symbol] if symbol in bars else []
+                        try:
+                            symbol_bars = bars[symbol]
+                        except (KeyError, IndexError):
+                            symbol_bars = []
                         if symbol_bars:
                             records = [{
                                 'date': bar.timestamp.date(),
