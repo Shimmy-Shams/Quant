@@ -32,6 +32,7 @@ class SignalConfig:
     min_lookback: int = 10
     max_lookback: int = 252
     default_lookback: int = 20
+    use_log_prices: bool = True  # Use log prices for z-score (more stationary)
 
     # Hurst Exponent
     hurst_threshold: float = 0.5  # Only trade if H < 0.5 (mean reverting)
@@ -54,6 +55,29 @@ class SignalConfig:
     # Regime detection
     vol_lookback: int = 60
     vol_long_lookback: int = 252
+
+    # Kalman Filter
+    use_kalman: bool = True
+    kalman_transition_cov: float = 1e-5      # Q: how fast the true mean drifts
+    kalman_observation_cov: float = 2e-4     # R: daily log-return variance (~1.5% vol)
+    kalman_initial_cov: float = 1e-3         # P0: initial uncertainty
+
+    # OU Prediction
+    use_predicted_return: bool = True
+    ou_hurdle_rate: float = 0.005  # 0.5% minimum expected return
+    ou_prediction_horizon: Optional[int] = None  # None = use half-life
+
+    # Signal composition mode (Phase B.1)
+    signal_mode: str = 'gated'           # 'confirmation' (legacy) or 'gated'
+    gate_signal: str = 'rsi_divergence'  # Signal that controls entries in gated mode
+    zscore_boost_factor: float = 0.5     # |zscore| conviction boost in gated mode
+
+    # Dynamic short confidence filter (Phase B.2)
+    use_dynamic_short_filter: bool = True
+    short_trend_lookback: int = 50        # MA period for trend assessment
+    short_momentum_fast: int = 5          # Fast momentum window (days)
+    short_momentum_slow: int = 20         # Slow momentum window (days)
+    short_min_confidence: float = 0.3     # Min confidence to allow shorts (0-1)
 
 
 class MeanReversionSignals:
@@ -180,7 +204,8 @@ class MeanReversionSignals:
 
     def adaptive_zscore(self, prices: pd.Series, half_life: Optional[float] = None) -> pd.Series:
         """
-        Calculate Z-score with adaptive lookback based on half-life
+        Calculate Z-score with adaptive lookback based on half-life.
+        Uses log prices when configured (more stationary for financial data).
 
         Args:
             prices: Price series
@@ -194,15 +219,132 @@ class MeanReversionSignals:
         else:
             lookback = self.config.default_lookback
 
+        # Use log prices for stationarity if configured
+        if self.config.use_log_prices:
+            series = np.log(prices.clip(lower=1e-8))
+        else:
+            series = prices
+
         # Rolling mean and std
-        rolling_mean = prices.rolling(window=lookback, min_periods=lookback//2).mean()
-        rolling_std = prices.rolling(window=lookback, min_periods=lookback//2).std()
+        rolling_mean = series.rolling(window=lookback, min_periods=lookback//2).mean()
+        rolling_std = series.rolling(window=lookback, min_periods=lookback//2).std()
 
         # Z-score
-        zscore = (prices - rolling_mean) / rolling_std
+        zscore = (series - rolling_mean) / rolling_std
         zscore = zscore.fillna(0)
 
         return zscore
+
+    def kalman_zscore(self, prices: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """
+        Kalman filter-based z-score estimation.
+
+        Uses a simple state-space model where the hidden state is the
+        'true mean' of the price process. The Kalman filter dynamically
+        estimates this mean and the uncertainty around it, producing a
+        z-score that adapts faster to regime changes than rolling windows.
+
+        State model:
+            mu_t = mu_{t-1} + w_t,   w_t ~ N(0, Q)   (mean drifts slowly)
+            p_t  = mu_t + v_t,       v_t ~ N(0, R)   (price = mean + noise)
+
+        Args:
+            prices: Price series
+
+        Returns:
+            (zscore, estimated_mean, estimated_std) tuple of Series
+        """
+        # Work in log-price space for stationarity
+        if self.config.use_log_prices:
+            obs = np.log(prices.clip(lower=1e-8)).values
+        else:
+            obs = prices.values
+
+        n = len(obs)
+        Q = self.config.kalman_transition_cov   # Process noise
+        R = self.config.kalman_observation_cov   # Observation noise
+
+        # Initialize state
+        mu = np.zeros(n)       # Estimated mean
+        P = np.zeros(n)        # Estimated covariance (uncertainty)
+        mu[0] = obs[0]
+        P[0] = self.config.kalman_initial_cov
+
+        # Kalman filter: predict-update cycle
+        for t in range(1, n):
+            # Predict
+            mu_pred = mu[t-1]
+            P_pred = P[t-1] + Q
+
+            # Update (Kalman gain)
+            K = P_pred / (P_pred + R)
+            mu[t] = mu_pred + K * (obs[t] - mu_pred)
+            P[t] = (1 - K) * P_pred
+
+        # Z-score = (observation - estimated_mean) / sqrt(estimation_uncertainty + obs_noise)
+        estimated_std = np.sqrt(P + R)
+        zscore_values = (obs - mu) / np.where(estimated_std > 1e-10, estimated_std, 1e-10)
+
+        zscore = pd.Series(zscore_values, index=prices.index, name='kalman_zscore')
+        est_mean = pd.Series(mu, index=prices.index, name='kalman_mean')
+        est_std = pd.Series(estimated_std, index=prices.index, name='kalman_std')
+
+        return zscore, est_mean, est_std
+
+    def ou_predicted_return(
+        self,
+        prices: pd.Series,
+        half_life: Optional[float] = None
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        Compute predicted return and expected time to reversion using
+        the Ornstein-Uhlenbeck model.
+
+        For the OU process: dP = theta*(mu - P)*dt + sigma*dW
+        Expected return over horizon h: E[P_{t+h} - P_t] = (mu - P_t) * (1 - e^{-theta*h})
+        Expected fractional return:     E[r] = ((mu - P_t) / P_t) * (1 - e^{-theta*h})
+
+        Args:
+            prices: Price series
+            half_life: Estimated OU half-life (if None, estimates it)
+
+        Returns:
+            (expected_return_series, time_to_reversion_series)
+        """
+        if half_life is None:
+            half_life = self.calculate_ou_half_life(prices)
+
+        if half_life is None or half_life <= 0:
+            # Cannot estimate OU parameters; return zeros
+            zeros = pd.Series(0.0, index=prices.index)
+            return zeros, zeros
+
+        theta = np.log(2) / half_life  # Mean-reversion speed
+
+        # Determine prediction horizon
+        horizon = self.config.ou_prediction_horizon
+        if horizon is None:
+            horizon = max(1, int(half_life))
+
+        # Use log prices for the OU model
+        if self.config.use_log_prices:
+            series = np.log(prices.clip(lower=1e-8))
+        else:
+            series = prices
+
+        # Rolling estimate of the mean level (mu)
+        lookback = int(np.clip(half_life * 2, self.config.min_lookback, self.config.max_lookback))
+        mu = series.rolling(window=lookback, min_periods=lookback//2).mean()
+
+        # Expected return: (mu - current) * (1 - exp(-theta * h))
+        reversion_factor = 1.0 - np.exp(-theta * horizon)
+        expected_return = (mu - series) * reversion_factor
+
+        # Time to reversion (from half-life): how many days to cover X% of gap
+        # For 90% reversion: t_90 = -ln(0.1) / theta = ln(10) / theta
+        time_to_reversion = pd.Series(half_life, index=prices.index)
+
+        return expected_return, time_to_reversion
 
     def bollinger_bands_signal(self, prices: pd.Series, volume: pd.Series) -> pd.Series:
         """
@@ -395,6 +537,72 @@ class MeanReversionSignals:
 
         return regime.fillna(1.0)
 
+    def _compute_short_confidence(self, prices: pd.Series) -> pd.Series:
+        """
+        Compute dynamic confidence score for short entries (0 to 1).
+
+        Adapts short entry aggressiveness to market conditions using
+        statistical measures rather than fixed multipliers. This eliminates
+        the need for manual threshold adjustments across market regimes.
+
+        Components:
+        1. Trend Extension: How far price is from MA (overextended = higher confidence)
+        2. Momentum Deceleration: Is the move losing steam? (decelerating = higher confidence)
+        3. Volatility Regime: Elevated vol = stronger mean reversion signal
+
+        Args:
+            prices: Price series for a single stock
+
+        Returns:
+            Confidence series (0 to 1), per day
+        """
+        trend_lb = self.config.short_trend_lookback
+        mom_fast = self.config.short_momentum_fast
+        mom_slow = self.config.short_momentum_slow
+
+        # --- 1. Trend Extension Score ---
+        # For mean-reverting stocks: further above MA = more overextended
+        # = more likely to revert = HIGHER confidence for shorting
+        ma = prices.rolling(window=trend_lb, min_periods=trend_lb // 2).mean()
+        extension = (prices - ma) / ma  # positive when above MA
+
+        # Map extension to score: [-0.15, +0.15] -> [-1, +1]
+        extension_score = extension.clip(-0.15, 0.15) / 0.15
+
+        # --- 2. Momentum Deceleration Score ---
+        # Compare fast vs slow momentum
+        # If fast momentum < slow momentum -> move is decelerating -> shorts are safer
+        roc_fast = prices.pct_change(mom_fast)
+        roc_slow = prices.pct_change(mom_slow)
+
+        # Positive deceleration = fast momentum weakening relative to slow
+        deceleration = roc_slow - roc_fast
+        decel_score = deceleration.clip(-0.05, 0.05) / 0.05  # [-1, +1]
+
+        # --- 3. Volatility Regime Score ---
+        # Elevated short-term vol vs long-term = mean reversion more powerful
+        returns = prices.pct_change()
+        vol_short = returns.rolling(window=20, min_periods=10).std() * np.sqrt(252)
+        vol_long = returns.rolling(window=60, min_periods=30).std() * np.sqrt(252)
+        vol_ratio = vol_short / vol_long.clip(lower=1e-6)
+
+        # Higher ratio = more vol expansion = better for mean reversion
+        vol_score = (vol_ratio.clip(0.5, 2.0) - 0.5) / 1.5  # [0, 1]
+        vol_score = vol_score * 2 - 1  # Remap to [-1, +1]
+
+        # --- Combine scores ---
+        # Extension and deceleration are primary, vol is secondary
+        raw_confidence = (
+            extension_score * 0.4 +
+            decel_score * 0.4 +
+            vol_score * 0.2
+        )
+
+        # Map from [-1, 1] to [0, 1]
+        confidence = (raw_confidence + 1) / 2
+
+        return confidence.fillna(0.5)
+
     def generate_composite_signal(
         self,
         prices: pd.Series,
@@ -402,11 +610,13 @@ class MeanReversionSignals:
         weights: Optional[Dict[str, float]] = None
     ) -> Tuple[pd.Series, Dict[str, pd.Series]]:
         """
-        Generate composite signal from multiple indicators
+        Generate composite signal from multiple indicators.
 
         The raw z-score is the primary signal (naturally scaled for thresholds).
+        When Kalman filter is enabled, it replaces the rolling-window z-score.
+        When OU prediction is enabled, signals are gated by expected return hurdle.
         Other indicators act as confirmation multipliers that boost or dampen
-        the z-score. A z-score of 2.0 = 2 standard deviations from the mean.
+        the z-score.
 
         Confirmation logic:
         - Each confirming signal adds a boost (e.g., +0.25 per confirming indicator)
@@ -421,7 +631,7 @@ class MeanReversionSignals:
         Returns:
             (composite_signal, individual_signals)
         """
-        # Confirmation weights (how much each confirming indicator boosts the z-score)
+        # Confirmation weights
         if weights is None:
             weights = {
                 'bollinger': 0.25,
@@ -431,40 +641,86 @@ class MeanReversionSignals:
 
         individual_signals = {}
 
-        # 1. Adaptive Z-Score (PRIMARY signal - raw, unscaled)
+        # 1. Primary Z-Score: Kalman or rolling adaptive
         half_life = self.calculate_ou_half_life(prices)
-        zscore = self.adaptive_zscore(prices, half_life)
+
+        if self.config.use_kalman:
+            zscore, kalman_mean, kalman_std = self.kalman_zscore(prices)
+            individual_signals['kalman_mean'] = kalman_mean
+            individual_signals['kalman_std'] = kalman_std
+        else:
+            zscore = self.adaptive_zscore(prices, half_life)
+
         individual_signals['zscore'] = zscore
 
-        # 2. Bollinger Bands (confirmation: -1, 0, or +1)
+        # 2. OU Predicted Return (makes strategy predictive)
+        if self.config.use_predicted_return:
+            expected_return, time_to_reversion = self.ou_predicted_return(prices, half_life)
+            individual_signals['expected_return'] = expected_return
+            individual_signals['time_to_reversion'] = time_to_reversion
+
+        # 3. Bollinger Bands (confirmation: -1, 0, or +1)
         bb_signal = self.bollinger_bands_signal(prices, volume)
         individual_signals['bollinger'] = bb_signal
 
-        # 3. RSI Divergence (confirmation: -1, 0, or +1)
+        # 4. RSI Divergence (confirmation: -1, 0, or +1)
         rsi_div_signal = self.rsi_divergence_signal(prices)
         individual_signals['rsi_divergence'] = rsi_div_signal
 
-        # 4. RSI Level (confirmation: -1, 0, or +1)
+        # 5. RSI Level (confirmation: -1, 0, or +1)
         rsi_values = self.rsi(prices)
         rsi_signal = pd.Series(0.0, index=prices.index)
         rsi_signal[rsi_values < self.config.rsi_oversold] = -1.0
         rsi_signal[rsi_values > self.config.rsi_overbought] = 1.0
         individual_signals['rsi_level'] = rsi_signal
 
-        # Composite: z-score boosted by confirmation signals
-        # Confirmation is symmetric: agreeing indicators boost magnitude in BOTH directions
-        confirmation = pd.Series(0.0, index=prices.index)
-        for name, weight in weights.items():
-            signal = individual_signals[name]
-            # Check agreement: signal and z-score have the same sign
-            # agreement = +1 when they agree, -1 when they disagree, 0 when signal is 0
-            agreement = np.sign(zscore) * signal
-            confirmation += weight * agreement
+        # --- Signal Composition ---
+        if self.config.signal_mode == 'gated':
+            # GATED MODE (Phase B.1): Gate signal controls entries, z-score adds conviction
+            # No gate signal = no trade (eliminates noise entries from z-score alone)
+            gate_name = self.config.gate_signal
+            if gate_name in individual_signals:
+                gate = individual_signals[gate_name]  # -1, 0, or +1
+            else:
+                gate = pd.Series(0.0, index=prices.index)
 
-        # Apply confirmation symmetrically: boost MAGNITUDE of z-score
-        # confirmation > 0 means indicators agree with z-score direction
-        # confirmation < 0 means indicators disagree
-        composite = zscore * (1.0 + confirmation)
+            boost = self.config.zscore_boost_factor
+
+            # Gate determines direction & entry; zscore magnitude adds conviction
+            # composite = gate * (1 + boost * |zscore|)
+            # When gate = 0:  composite = 0      -> no trade
+            # When gate = -1: composite < 0       -> long entry
+            # When gate = +1: composite > 0       -> short entry
+            composite = gate * (1.0 + boost * zscore.abs())
+
+            # Apply dynamic short confidence filter (Phase B.2)
+            if self.config.use_dynamic_short_filter:
+                short_confidence = self._compute_short_confidence(prices)
+                # Dampen short signals (positive composite) when confidence is low
+                short_mask = composite > 0
+                # Zero out shorts below confidence threshold
+                low_confidence = short_confidence < self.config.short_min_confidence
+                composite[short_mask & low_confidence] = 0.0
+                # Scale remaining shorts by confidence
+                remaining_shorts = short_mask & ~low_confidence
+                composite[remaining_shorts] = composite[remaining_shorts] * short_confidence[remaining_shorts]
+
+        else:
+            # CONFIRMATION MODE (legacy): z-score primary, others boost/dampen
+            confirmation = pd.Series(0.0, index=prices.index)
+            for name, weight in weights.items():
+                signal = individual_signals[name]
+                agreement = np.sign(zscore) * signal
+                confirmation += weight * agreement
+            composite = zscore * (1.0 + confirmation)
+
+        # Apply OU hurdle gate: zero out signals where expected return is too small
+        if self.config.use_predicted_return:
+            hurdle = self.config.ou_hurdle_rate
+            expected_return = individual_signals['expected_return']
+            # Signal should agree with expected return direction AND exceed hurdle
+            insufficient_ev = expected_return.abs() < hurdle
+            composite[insufficient_ev] = 0.0
 
         return composite, individual_signals
 
