@@ -1,6 +1,10 @@
 # Interactive Brokers Integration
 ib_insync==0.9.86
 
+# Alpaca Markets Integration (Paper Trading)
+alpaca-py>=0.28.0
+pytz>=2024.1
+
 # Historical Data Sources
 yfinance>=0.2.32
 

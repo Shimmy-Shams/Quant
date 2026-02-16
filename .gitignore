@@ -47,3 +47,10 @@ logs/
 config.json
 secrets.json
 credentials.json
+
+# Virtual environment
+.venv/
+venv/
+
+# DataAnalysisExpert temp
+DataAnalysisExpert/

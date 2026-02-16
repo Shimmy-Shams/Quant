@@ -101,7 +101,7 @@ backtest:
   end_date: null              # e.g., "2026-02-15"
 
   # Capital
-  initial_capital: 1000000.0
+  initial_capital: 100000.0
 
   # Returns calculation method
   use_log_returns: true     # Use log returns for metrics (Sharpe, Sortino, etc.)
@@ -248,3 +248,27 @@ logging:
   # Progress updates
   show_progress: true
   progress_interval: 50     # Print progress every N symbols
+
+
+# =============================================================================
+# ALPACA PAPER TRADING
+# =============================================================================
+alpaca:
+  # Data settings
+  data_feed: "iex"              # 'iex' (free) or 'sip' ($99/mo)
+  lookback_days: 504            # Days of history for signal warmup
+
+  # Universe selection (free tier: max 30 symbols)
+  max_universe_size: 30
+  universe_source: "hurst"      # 'hurst' (rank by H exponent) or 'manual'
+  manual_symbols: []            # Override: list specific symbols here
+
+  # Execution
+  default_mode: "shadow"        # 'shadow', 'live', or 'replay'
+
+  # Simulation (replay mode)
+  replay_years: 2               # Years of history to replay
+
+  # Shadow state persistence
+  save_shadow_state: true
+  shadow_state_dir: "data/snapshots"
