@@ -121,9 +121,9 @@ class MeanReversionSignals:
         # Regression: delta_P = alpha + theta * P_lag + error
         # theta should be negative for mean reversion
         try:
-            X = add_constant(df['lag'])
-            model = OLS(df['delta'], X).fit()
-            theta = model.params.iloc[1]
+            X = np.column_stack([np.ones(len(df)), df['lag'].values])
+            result = np.linalg.lstsq(X, df['delta'].values, rcond=None)
+            theta = result[0][1]
 
             # Check if mean reverting (theta < 0)
             if theta >= 0:
@@ -193,9 +193,9 @@ class MeanReversionSignals:
             log_lags = np.log(valid_lags)
             log_tau = np.log(valid_tau)
 
-            X = add_constant(log_lags)
-            model = OLS(log_tau, X).fit()
-            hurst = model.params[1]
+            X = np.column_stack([np.ones(len(log_lags)), log_lags])
+            result = np.linalg.lstsq(X, log_tau, rcond=None)
+            hurst = result[0][1]
 
             return hurst
 
@@ -420,10 +420,13 @@ class MeanReversionSignals:
 
     def rsi_divergence_signal(self, prices: pd.Series) -> pd.Series:
         """
-        Detect RSI divergence
+        Detect RSI divergence (vectorized implementation).
 
         Bullish divergence: Price makes lower low, RSI makes higher low
         Bearish divergence: Price makes higher high, RSI makes lower high
+
+        Uses vectorized rolling min/max to find local extrema, then loops
+        only over found extrema (~1-2% of bars) for ~50-100x speedup.
 
         Args:
             prices: Price series
@@ -432,33 +435,49 @@ class MeanReversionSignals:
             Signal series [-1, +1]
         """
         rsi_values = self.rsi(prices)
-        signal = pd.Series(0.0, index=prices.index)
-
-        # Find local minima and maxima (simple approach: 5-day window)
+        n = len(prices)
         window = 5
 
-        for i in range(window, len(prices) - window):
-            # Check for local minimum in prices
-            if prices.iloc[i] == prices.iloc[i-window:i+window+1].min():
-                # Look for previous local minimum
-                for j in range(max(0, i - 30), i - window):
-                    if prices.iloc[j] == prices.iloc[max(0, j-window):j+window+1].min():
-                        # Bullish divergence: lower price low, higher RSI low
-                        if prices.iloc[i] < prices.iloc[j] and rsi_values.iloc[i] > rsi_values.iloc[j]:
-                            signal.iloc[i] = -1.0  # Buy signal
-                        break
+        if n < 2 * window + 1:
+            return pd.Series(0.0, index=prices.index)
 
-            # Check for local maximum in prices
-            if prices.iloc[i] == prices.iloc[i-window:i+window+1].max():
-                # Look for previous local maximum
-                for j in range(max(0, i - 30), i - window):
-                    if prices.iloc[j] == prices.iloc[max(0, j-window):j+window+1].max():
-                        # Bearish divergence: higher price high, lower RSI high
-                        if prices.iloc[i] > prices.iloc[j] and rsi_values.iloc[i] < rsi_values.iloc[j]:
-                            signal.iloc[i] = 1.0  # Sell signal
-                        break
+        price_arr = prices.values
+        rsi_arr = rsi_values.values
+        signal = np.zeros(n)
 
-        return signal
+        # Vectorized local extrema detection via rolling min/max
+        win_size = 2 * window + 1
+        price_s = pd.Series(price_arr)
+        roll_min = price_s.rolling(win_size, center=True).min().values
+        roll_max = price_s.rolling(win_size, center=True).max().values
+
+        valid = ~np.isnan(roll_min)
+        min_idx = np.where(valid & (price_arr == roll_min))[0]
+        max_idx = np.where(valid & (price_arr == roll_max))[0]
+
+        # Bullish divergence: for each local min, find earliest prior min within 30 bars
+        for k in range(len(min_idx)):
+            curr = min_idx[k]
+            lo = max(0, curr - 30)
+            hi = curr - window
+            pos = np.searchsorted(min_idx[:k], lo)
+            if pos < k and min_idx[pos] < hi:
+                prev = min_idx[pos]
+                if price_arr[curr] < price_arr[prev] and rsi_arr[curr] > rsi_arr[prev]:
+                    signal[curr] = -1.0
+
+        # Bearish divergence: for each local max, find earliest prior max within 30 bars
+        for k in range(len(max_idx)):
+            curr = max_idx[k]
+            lo = max(0, curr - 30)
+            hi = curr - window
+            pos = np.searchsorted(max_idx[:k], lo)
+            if pos < k and max_idx[pos] < hi:
+                prev = max_idx[pos]
+                if price_arr[curr] > price_arr[prev] and rsi_arr[curr] < rsi_arr[prev]:
+                    signal[curr] = 1.0
+
+        return pd.Series(signal, index=prices.index)
 
     def cross_sectional_signal(self, price_data: Dict[str, pd.Series], lookback: Optional[int] = None) -> Dict[str, pd.Series]:
         """

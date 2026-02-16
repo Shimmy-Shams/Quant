@@ -200,8 +200,14 @@ class ConfigLoader:
             entry_threshold=self.get('backtest.entry_threshold', 2.0),
             exit_threshold=self.get('backtest.exit_threshold', 0.5),
             stop_loss_pct=self.get('backtest.stop_loss_pct'),
+            short_stop_loss_pct=self.get('backtest.short_stop_loss_pct'),
             take_profit_pct=self.get('backtest.take_profit_pct'),
             max_holding_days=self.get('backtest.max_holding_days'),
+
+            # Short acceleration filter
+            short_accel_filter=self.get('backtest.short_accel_filter.enabled', False),
+            short_accel_lookback=self.get('backtest.short_accel_filter.lookback_days', 3),
+            short_accel_threshold=self.get('backtest.short_accel_filter.threshold', 0.10),
 
             # Trailing stop (Phase B.3)
             use_trailing_stop=self.get('backtest.trailing_stop.enabled', False),

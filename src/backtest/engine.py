@@ -56,8 +56,14 @@ class BacktestConfig:
 
     # Risk management
     stop_loss_pct: Optional[float] = None  # None = no stop loss
+    short_stop_loss_pct: Optional[float] = None  # Separate stop for shorts (overrides stop_loss_pct)
     take_profit_pct: Optional[float] = None  # None = no take profit
     max_holding_days: Optional[int] = None  # None = hold until signal
+
+    # Short acceleration filter (blocks short entry if stock surged recently)
+    short_accel_filter: bool = False
+    short_accel_lookback: int = 3       # Look back N days
+    short_accel_threshold: float = 0.10  # Block if stock rose > 10% in lookback
 
     # Trailing stop (Phase B.3 - locks in profits after activation)
     use_trailing_stop: bool = False
@@ -134,8 +140,10 @@ class BacktestResults:
 
     def summary(self) -> Dict:
         """Return summary dict"""
+        final_eq = self.equity_curve.iloc[-1] if len(self.equity_curve) > 0 else 0
         return {
             'Total Return': f"{self.total_return*100:.2f}%",
+            'Final Equity': f"${final_eq:,.2f}",
             'Annualized Return': f"{self.annualized_return*100:.2f}%",
             'Sharpe Ratio': f"{self.sharpe_ratio:.2f}",
             'Sortino Ratio': f"{self.sortino_ratio:.2f}",
@@ -423,8 +431,11 @@ class BacktestEngine:
                     should_exit = True
                     exit_reason = 'signal'
 
-                # 2. Stop loss
-                if cfg.stop_loss_pct is not None and pnl_pct_now < -cfg.stop_loss_pct:
+                # 2. Stop loss (short-specific override if configured)
+                effective_sl = cfg.stop_loss_pct
+                if side == 'short' and cfg.short_stop_loss_pct is not None:
+                    effective_sl = cfg.short_stop_loss_pct
+                if effective_sl is not None and pnl_pct_now < -effective_sl:
                     should_exit = True
                     exit_reason = 'stop_loss'
 
@@ -534,6 +545,12 @@ class BacktestEngine:
                 pos_value = portfolio_value * size_frac
                 shares = pos_value / px
                 side = 'long' if sig < 0 else 'short'
+
+                # Short acceleration filter: skip shorts if stock surged recently
+                if side == 'short' and cfg.short_accel_filter and i >= cfg.short_accel_lookback:
+                    lookback_px = price_arr[i - cfg.short_accel_lookback, sym_idx]
+                    if lookback_px > 0 and (px - lookback_px) / lookback_px > cfg.short_accel_threshold:
+                        continue  # Stock surged — skip this short entry
 
                 # Entry commission
                 entry_comm = shares * px * txn_cost_rate
