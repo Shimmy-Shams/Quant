@@ -76,7 +76,7 @@
 <body>
     <div class="container">
         <h1>📈 Quant Trading Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-17 06:59:11 UTC</div>
+        <div class="timestamp">Last Updated: 2026-02-17 07:05:13 UTC</div>
         
         <div class="metrics-grid">
             <div class="metric-card">
@@ -108,9 +108,9 @@
         </div>
         
         <div class="section">
-            <div class="section-title">Open Positions (1)</div>
+            <div class="section-title">Open Positions (0)</div>
             <div id="positions-container">
-                
+                <p style="color: #8b949e;">No open positions</p>
             </div>
         </div>
         
@@ -130,7 +130,7 @@
     <script>
         // Data
         const equityData = [{"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}];
-        const positionsData = [{"symbol": "CRWD", "side": "long", "qty": 23, "entry_price": 430.27503, "current_price": 430.06, "pnl": -4.95, "pnl_pct": -0.05, "entry_date": "2026-02-13", "signal": -1.88}];
+        const positionsData = [];
         const tradesData = [{"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}, {"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}];
         
         // Render positions table
