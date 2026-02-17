@@ -1,5 +1,5 @@
 [Unit]
-Description=Mean Reversion Trader (Shadow Mode)
+Description=Mean Reversion Trader (Live Mode)
 After=network-online.target
 Wants=network-online.target
 
@@ -8,7 +8,7 @@ Type=simple
 User=trader
 Group=trader
 WorkingDirectory=/home/trader/Quant
-ExecStart=/home/trader/Quant/venv/bin/python src/main_trader.py --mode shadow
+ExecStart=/home/trader/Quant/venv/bin/python src/main_trader.py --mode live --push-dashboard
 Restart=on-failure
 RestartSec=60
 

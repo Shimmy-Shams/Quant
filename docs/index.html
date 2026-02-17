@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant Trading Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { 
+            font-size: 2em; 
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .timestamp {
+            color: #8b949e;
+            font-size: 0.9em;
+            margin-bottom: 30px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .metric-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .metric-label { color: #8b949e; font-size: 0.85em; margin-bottom: 8px; }
+        .metric-value { font-size: 1.8em; font-weight: 600; }
+        .positive { color: #3fb950; }
+        .negative { color: #f85149; }
+        .section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        .section-title { font-size: 1.3em; margin-bottom: 20px; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            text-align: left; 
+            padding: 12px; 
+            border-bottom: 2px solid #30363d;
+            color: #8b949e;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+        td { padding: 12px; border-bottom: 1px solid #21262d; }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .badge-long { background: #238636; color: #fff; }
+        .badge-short { background: #da3633; color: #fff; }
+        #equityChart { max-height: 400px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 Quant Trading Dashboard</h1>
+        <div class="timestamp">Last Updated: 2026-02-17 06:59:11 UTC</div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Portfolio Value</div>
+                <div class="metric-value">$99,965.38</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Return</div>
+                <div class="metric-value negative">
+                    -0.03%
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Win Rate</div>
+                <div class="metric-value">0.0%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Trades</div>
+                <div class="metric-value">2</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Sharpe Ratio</div>
+                <div class="metric-value">-7.94</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Max Drawdown</div>
+                <div class="metric-value negative">0.03%</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Open Positions (1)</div>
+            <div id="positions-container">
+                
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Equity Curve</div>
+            <canvas id="equityChart"></canvas>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Recent Trades (Last 50)</div>
+            <div id="trades-container" style="overflow-x: auto;">
+                
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Data
+        const equityData = [{"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}];
+        const positionsData = [{"symbol": "CRWD", "side": "long", "qty": 23, "entry_price": 430.27503, "current_price": 430.06, "pnl": -4.95, "pnl_pct": -0.05, "entry_date": "2026-02-13", "signal": -1.88}];
+        const tradesData = [{"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}, {"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}];
+        
+        // Render positions table
+        if (positionsData.length > 0) {
+            const posHtml = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Entry</th>
+                            <th>Current</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Entry Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${positionsData.map(p => `
+                            <tr>
+                                <td><strong>${p.symbol}</strong></td>
+                                <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
+                                <td>${p.qty}</td>
+                                <td>$$${p.entry_price.toFixed(2)}</td>
+                                <td>$$${p.current_price.toFixed(2)}</td>
+                                <td class="${p.pnl >= 0 ? 'positive' : 'negative'}">$$${p.pnl.toFixed(2)}</td>
+                                <td class="${p.pnl_pct >= 0 ? 'positive' : 'negative'}">${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(2)}%</td>
+                                <td>${p.entry_date}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('positions-container').innerHTML = posHtml;
+        }
+        
+        // Render trades table
+        if (tradesData.length > 0) {
+            const tradesHtml = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry Date</th>
+                            <th>Exit Date</th>
+                            <th>Days</th>
+                            <th>P&L %</th>
+                            <th>Exit Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tradesData.map(t => `
+                            <tr>
+                                <td><strong>${t.symbol}</strong></td>
+                                <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+                                <td>${t.entry_date}</td>
+                                <td>${t.exit_date}</td>
+                                <td>${t.holding_days}</td>
+                                <td class="${t.pnl_pct >= 0 ? 'positive' : 'negative'}">${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct.toFixed(2)}%</td>
+                                <td style="font-size: 0.9em; color: #8b949e;">${t.exit_reason}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('trades-container').innerHTML = tradesHtml;
+        }
+        
+        // Equity curve chart
+        if (equityData.length > 0) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: equityData.map(d => d.date),
+                    datasets: [{
+                        label: 'Equity',
+                        data: equityData.map(d => d.equity),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#161b22',
+                            borderColor: '#30363d',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: (context) => `Equity: $$${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: '#21262d' },
+                            ticks: { 
+                                color: '#8b949e',
+                                callback: (value) => '$' + value.toLocaleString()
+                            }
+                        },
+                        x: {
+                            grid: { color: '#21262d' },
+                            ticks: { 
+                                color: '#8b949e',
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

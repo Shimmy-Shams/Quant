@@ -48,6 +48,7 @@ from connection.alpaca_connection import AlpacaConfig, AlpacaConnection, Trading
 from data.alpaca_data import AlpacaDataAdapter
 from execution.alpaca_executor import AlpacaExecutor
 from execution.simulation import SimulationEngine
+from dashboard_generator import DashboardGenerator
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -470,6 +471,58 @@ def _interruptible_sleep(seconds: float) -> None:
         time.sleep(min(1.0, end - time.time()))
 
 
+def _generate_and_push_dashboard(auto_push: bool = False) -> None:
+    """
+    Generate static dashboard and optionally push to GitHub.
+    
+    Args:
+        auto_push: If True, commits and pushes to GitHub
+    """
+    try:
+        import subprocess
+        
+        # Generate dashboard
+        generator = DashboardGenerator(PROJECT_ROOT)
+        output_path = PROJECT_ROOT / "docs" / "index.html"
+        
+        if generator.generate(output_path):
+            logger.info(f"✅ Dashboard generated: {output_path}")
+            
+            if auto_push:
+                # Git operations
+                try:
+                    subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "add", "docs/index.html"],
+                        check=True, capture_output=True, timeout=10
+                    )
+                    
+                    commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
+                    result = subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "commit", "-m", commit_msg],
+                        capture_output=True, timeout=10
+                    )
+                    
+                    # Only push if there was something to commit
+                    if result.returncode == 0:
+                        subprocess.run(
+                            ["git", "-C", str(PROJECT_ROOT), "push", "origin", "main"],
+                            check=True, capture_output=True, timeout=30
+                        )
+                        logger.info("✅ Dashboard pushed to GitHub")
+                    else:
+                        logger.info("ℹ️  No dashboard changes to commit")
+                        
+                except subprocess.TimeoutExpired:
+                    logger.warning("⚠️  Git operation timed out")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"⚠️  Git push failed: {e}")
+        else:
+            logger.warning("⚠️  Dashboard generation failed")
+            
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}", exc_info=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
@@ -493,6 +546,14 @@ def parse_args():
     parser.add_argument(
         "--once", action="store_true",
         help="Run a single cycle and exit (useful for cron)"
+    )
+    parser.add_argument(
+        "--no-dashboard", action="store_true",
+        help="Skip dashboard generation"
+    )
+    parser.add_argument(
+        "--push-dashboard", action="store_true",
+        help="Auto-commit and push dashboard to GitHub"
     )
     return parser.parse_args()
 
@@ -601,6 +662,10 @@ def main():
 
             last_trade_date = today
             logger.info(f"Cycle {cycle_count} result: {result}")
+
+            # ── Generate Dashboard ──
+            if not args.no_dashboard:
+                _generate_and_push_dashboard(args.push_dashboard)
 
             # ── Exit or sleep ──
             if args.once:
