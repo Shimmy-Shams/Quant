@@ -76,17 +76,17 @@
 <body>
     <div class="container">
         <h1>📈 Quant Trading Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-17 07:23:15 UTC</div>
+        <div class="timestamp">Last Updated: 2026-02-17 07:24:25 UTC</div>
         
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-label">Portfolio Value</div>
-                <div class="metric-value">$99,965.38</div>
+                <div class="metric-value">$999,999.62</div>
             </div>
             <div class="metric-card">
                 <div class="metric-label">Total Return</div>
                 <div class="metric-value negative">
-                    -0.03%
+                    -0.00%
                 </div>
             </div>
             <div class="metric-card">
@@ -108,9 +108,9 @@
         </div>
         
         <div class="section">
-            <div class="section-title">Open Positions (0)</div>
+            <div class="section-title">Open Positions (1)</div>
             <div id="positions-container">
-                <p style="color: #8b949e;">No open positions</p>
+                
             </div>
         </div>
         
@@ -130,7 +130,7 @@
     <script>
         // Data
         const equityData = [{"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}];
-        const positionsData = [];
+        const positionsData = [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "pnl": -0.1, "pnl_pct": -0.41, "entry_date": "N/A", "signal": 0.0}];
         const tradesData = [{"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}, {"symbol": "CRWD", "side": "long", "entry_date": "2026-02-13", "exit_date": "2026-02-13", "entry_price": 430.27503, "exit_price": 429.8449700000001, "pnl": -19.77781430999929, "pnl_pct": -0.2, "holding_days": 0, "exit_reason": "Signal exit (z=1.77 > -0.5)"}];
         
         // Render positions table
