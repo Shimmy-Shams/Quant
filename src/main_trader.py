@@ -403,31 +403,42 @@ def is_market_day() -> bool:
     return today not in holidays
 
 
-def seconds_until_market_open() -> float:
+def seconds_until_execution_window() -> float:
     """
-    Seconds until 9:35 AM ET (5 min after open for IEX data to stabilize).
-    Returns 0 if already past 9:35 ET but before 4:00 PM ET.
+    Seconds until 3:55 PM ET (5 min before close).
+    
+    We execute near market close to match the backtest engine, which
+    uses daily close prices for signal generation and entry/exit decisions.
+    Running at close ensures today's full price bar is formed.
+    
+    Returns 0 if in the execution window (3:55–4:00 PM ET).
+    Returns positive if before the window.
     Returns negative if past market close.
     """
     import pytz
     et = pytz.timezone("US/Eastern")
     now_et = datetime.now(et)
-    open_time = now_et.replace(hour=9, minute=35, second=0, microsecond=0)
+    exec_time = now_et.replace(hour=15, minute=55, second=0, microsecond=0)
     close_time = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
 
-    if open_time <= now_et <= close_time:
-        return 0  # Market is open
-    elif now_et < open_time:
-        return (open_time - now_et).total_seconds()
+    if exec_time <= now_et <= close_time:
+        return 0  # In execution window
+    elif now_et < exec_time:
+        return (exec_time - now_et).total_seconds()
     else:
         return -1  # Past close
 
 
-def wait_for_market(interval_sec: int) -> None:
+def wait_for_execution_window(interval_sec: int) -> None:
     """
-    Sleep until the appropriate time to run:
-    - On market days: sleep until 9:35 ET (or run immediately if open)
-    - On weekends/holidays: sleep `interval_sec` then re-check
+    Sleep until the execution window (3:55 PM ET).
+    
+    This matches the backtest engine which uses daily close prices.
+    By executing near close, the IEX daily bar is fully formed and
+    signals reflect the same data the backtest used.
+    
+    - On market days: sleep until 3:55 PM ET
+    - On weekends/holidays: sleep then re-check
     """
     while not SHUTDOWN_REQUESTED:
         if not is_market_day():
@@ -435,13 +446,21 @@ def wait_for_market(interval_sec: int) -> None:
             _interruptible_sleep(min(interval_sec, 3600))
             continue
 
-        wait = seconds_until_market_open()
-        if wait <= 0:
-            return  # Market is open or past close
+        wait = seconds_until_execution_window()
+        if wait == 0:
+            return  # In execution window
         elif wait > 0:
-            logger.info(f"Market opens in {wait/60:.0f}min — sleeping...")
-            _interruptible_sleep(wait)
-            return
+            hours = wait / 3600
+            if hours > 1:
+                logger.info(f"Execution window in {hours:.1f}h (3:55 PM ET) — sleeping...")
+            else:
+                logger.info(f"Execution window in {wait/60:.0f}min — sleeping...")
+            _interruptible_sleep(min(wait, 3600))  # Re-log every hour
+        elif wait < 0:
+            # Past close — sleep until tomorrow
+            logger.info("Past market close — sleeping until tomorrow...")
+            _interruptible_sleep(min(interval_sec, 3600))
+            continue
 
 
 def _interruptible_sleep(seconds: float) -> None:
@@ -550,9 +569,9 @@ def main():
 
     while not SHUTDOWN_REQUESTED:
         try:
-            # Wait for market (unless running on interval/once)
+            # Wait for execution window (unless running on interval/once)
             if args.interval == 0 and not args.once:
-                wait_for_market(interval_sec=3600)
+                wait_for_execution_window(interval_sec=3600)
                 if SHUTDOWN_REQUESTED:
                     break
 
