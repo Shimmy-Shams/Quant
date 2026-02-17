@@ -8,16 +8,19 @@ expected by MeanReversionSignals and BacktestEngine.
 Performance optimizations:
 - Cache-first loading: reads local parquet files before hitting API
 - Incremental updates: only fetches new bars since last cache timestamp
+- Trading calendar awareness: skips API calls on weekends/holidays
 - Concurrent fetching: parallel API calls for fresh/split batches
+- Request timeouts: prevents hanging on unresponsive API
+- Graceful no-data handling: tracks IEX-unavailable symbols
 - Vectorized bar conversion: bulk DataFrame construction
 """
 
 import logging
 import time
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set, Tuple
+from datetime import datetime, timedelta, date as date_type
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 
 import pandas as pd
 import numpy as np
@@ -25,6 +28,112 @@ import numpy as np
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
 from alpaca.data.timeframe import TimeFrame
+
+# ─── US Market Holiday Calendar ────────────────────────────────────────────
+# Major US exchange holidays (NYSE/NASDAQ). Covers fixed + observed dates.
+# Updated annually; holidays that fall on weekends are observed Mon/Fri.
+
+def _us_market_holidays(year: int) -> Set[date_type]:
+    """Return set of US market holiday dates for a given year."""
+    from datetime import date as d
+    holidays = set()
+
+    # New Year's Day (Jan 1, observed)
+    ny = d(year, 1, 1)
+    if ny.weekday() == 6:  # Sunday → Monday
+        holidays.add(d(year, 1, 2))
+    elif ny.weekday() == 5:  # Saturday → Friday prior
+        holidays.add(d(year - 1, 12, 31))
+    else:
+        holidays.add(ny)
+
+    # MLK Day: 3rd Monday of January
+    jan1 = d(year, 1, 1)
+    first_mon = jan1 + timedelta(days=(7 - jan1.weekday()) % 7)
+    holidays.add(first_mon + timedelta(weeks=2))
+
+    # Presidents' Day: 3rd Monday of February
+    feb1 = d(year, 2, 1)
+    first_mon = feb1 + timedelta(days=(7 - feb1.weekday()) % 7)
+    holidays.add(first_mon + timedelta(weeks=2))
+
+    # Good Friday (approximate: 2 days before Easter)
+    # Use Anonymous Gregorian algorithm
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    dd = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - dd - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    easter = d(year, month, day)
+    holidays.add(easter - timedelta(days=2))  # Good Friday
+
+    # Memorial Day: last Monday of May
+    may31 = d(year, 5, 31)
+    holidays.add(may31 - timedelta(days=(may31.weekday()) % 7))
+
+    # Juneteenth (Jun 19, observed) — NYSE holiday since 2022
+    if year >= 2022:
+        jt = d(year, 6, 19)
+        if jt.weekday() == 6:
+            holidays.add(d(year, 6, 20))
+        elif jt.weekday() == 5:
+            holidays.add(d(year, 6, 18))
+        else:
+            holidays.add(jt)
+
+    # Independence Day (Jul 4, observed)
+    jul4 = d(year, 7, 4)
+    if jul4.weekday() == 6:
+        holidays.add(d(year, 7, 5))
+    elif jul4.weekday() == 5:
+        holidays.add(d(year, 7, 3))
+    else:
+        holidays.add(jul4)
+
+    # Labor Day: 1st Monday of September
+    sep1 = d(year, 9, 1)
+    holidays.add(sep1 + timedelta(days=(7 - sep1.weekday()) % 7))
+
+    # Thanksgiving: 4th Thursday of November
+    nov1 = d(year, 11, 1)
+    first_thu = nov1 + timedelta(days=(3 - nov1.weekday()) % 7)
+    holidays.add(first_thu + timedelta(weeks=3))
+
+    # Christmas (Dec 25, observed)
+    xmas = d(year, 12, 25)
+    if xmas.weekday() == 6:
+        holidays.add(d(year, 12, 26))
+    elif xmas.weekday() == 5:
+        holidays.add(d(year, 12, 24))
+    else:
+        holidays.add(xmas)
+
+    return holidays
+
+
+def _trading_days_between(start: date_type, end: date_type) -> int:
+    """Count trading days (Mon-Fri, non-holiday) between two dates inclusive."""
+    if start > end:
+        return 0
+    count = 0
+    holidays = set()
+    for y in range(start.year, end.year + 1):
+        holidays |= _us_market_holidays(y)
+    current = start
+    while current <= end:
+        if current.weekday() < 5 and current not in holidays:
+            count += 1
+        current += timedelta(days=1)
+    return count
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +171,7 @@ class AlpacaDataAdapter:
         self.cache_dir = cache_dir
         self._call_count = 0
         self._call_window_start = time.time()
+        self._no_data_symbols: Set[str] = set()  # Symbols with no IEX data
 
     def _rate_limit(self):
         """Enforce 200 calls/min rate limit"""
@@ -126,7 +236,8 @@ class AlpacaDataAdapter:
                 if df is not None and len(df) > 0:
                     result[symbol] = df
                 else:
-                    logger.warning(f"No data returned for {symbol}")
+                    self._no_data_symbols.add(symbol)
+                    logger.debug(f"No data returned for {symbol} (IEX may not cover this symbol)")
         except Exception as e:
             logger.error(f"Batch error ({batch[:3]}…): {e}")
             # Individual fallback
@@ -196,8 +307,15 @@ class AlpacaDataAdapter:
                     for batch in batches
                 }
                 for future in as_completed(futures):
-                    batch_result = future.result()
-                    all_bars.update(batch_result)
+                    try:
+                        batch_result = future.result(timeout=60)
+                        all_bars.update(batch_result)
+                    except FuturesTimeoutError:
+                        batch = futures[future]
+                        logger.warning(f"Timeout fetching batch: {batch[:3]}... — skipping")
+                    except Exception as e:
+                        batch = futures[future]
+                        logger.error(f"Error in batch {batch[:3]}...: {e}")
 
         logger.info(f"Fetched data for {len(all_bars)}/{len(symbols)} symbols")
         return all_bars
@@ -288,7 +406,9 @@ class AlpacaDataAdapter:
         raw_bars: Dict[str, pd.DataFrame] = {}
         cache_hit = 0
         cache_miss_symbols: List[str] = []
+        need_incremental = False
         incremental_start: Optional[datetime] = None
+        cache_age_days = 0
 
         # ── Step 1: Try loading from cache ─────────────────────────────
         if use_cache and self.cache_dir:
@@ -300,7 +420,6 @@ class AlpacaDataAdapter:
                 latest_dates = [df.index.max() for df in cached.values() if len(df) > 0]
                 if latest_dates:
                     latest_cached = max(latest_dates)
-                    # Convert to datetime for comparison
                     latest_cached_dt = pd.Timestamp(latest_cached).to_pydatetime()
 
                     # Trim cached data to requested window
@@ -309,20 +428,36 @@ class AlpacaDataAdapter:
                         if len(trimmed) > 0:
                             raw_bars[sym] = trimmed
 
-                    # Determine if we need incremental update
+                    # ── Trading calendar check ─────────────────────────
                     today = datetime.now().date()
-                    cache_age_days = (today - latest_cached_dt.date()).days
+                    cache_date = latest_cached_dt.date()
+                    cache_age_days = (today - cache_date).days
 
-                    if cache_age_days > 0:
-                        # Need incremental update for all cached symbols
+                    # Count actual trading days missed (not calendar days)
+                    next_day = cache_date + timedelta(days=1)
+                    missed_trading_days = _trading_days_between(next_day, today)
+
+                    if missed_trading_days > 0:
+                        need_incremental = True
                         incremental_start = latest_cached_dt + timedelta(days=1)
                         if verbose:
                             print(f"   📦 Cache hit: {cache_hit} symbols "
-                                  f"(latest: {latest_cached_dt.date()}, "
-                                  f"{cache_age_days}d stale)")
+                                  f"(latest: {cache_date}, "
+                                  f"{cache_age_days}d ago, "
+                                  f"{missed_trading_days} trading day(s) to fetch)")
                     else:
                         if verbose:
-                            print(f"   📦 Cache hit: {cache_hit} symbols (up to date)")
+                            reason = ""
+                            if today.weekday() >= 5:
+                                reason = " (weekend)"
+                            elif today in _us_market_holidays(today.year):
+                                reason = " (market holiday)"
+                            elif cache_age_days == 0:
+                                reason = ""
+                            else:
+                                reason = " (no missed trading days)"
+                            print(f"   📦 Cache hit: {cache_hit} symbols — "
+                                  f"up to date{reason}, skipping API")
 
                 # Symbols not in cache need full fetch
                 cache_miss_symbols = [s for s in symbols if s not in raw_bars]
@@ -337,23 +472,33 @@ class AlpacaDataAdapter:
             cache_miss_symbols = symbols
 
         # ── Step 2: Incremental update for cached symbols ──────────────
-        if incremental_start and raw_bars:
-            stale_symbols = list(raw_bars.keys())
-            if verbose:
-                print(f"   🔄 Incremental update: {len(stale_symbols)} symbols "
-                      f"from {incremental_start.date()}...")
-            t0 = time.perf_counter()
-            delta = self.fetch_daily_bars(stale_symbols, incremental_start, end_date)
-            dt = time.perf_counter() - t0
-            updated = 0
-            for sym in stale_symbols:
-                if sym in delta and len(delta[sym]) > 0:
-                    raw_bars[sym] = pd.concat([raw_bars[sym], delta[sym]])
-                    raw_bars[sym] = raw_bars[sym][~raw_bars[sym].index.duplicated(keep='last')]
-                    raw_bars[sym] = raw_bars[sym].sort_index()
-                    updated += 1
-            if verbose:
-                print(f"   ✅ Updated {updated} symbols in {dt:.1f}s")
+        if need_incremental and incremental_start and raw_bars:
+            # Filter out symbols that are known to have no IEX data
+            stale_symbols = [s for s in raw_bars.keys()
+                             if s not in self._no_data_symbols]
+            if stale_symbols:
+                if verbose:
+                    print(f"   🔄 Incremental update: {len(stale_symbols)} symbols "
+                          f"from {incremental_start.date()}...")
+                    if self._no_data_symbols & set(raw_bars.keys()):
+                        skipped = self._no_data_symbols & set(raw_bars.keys())
+                        print(f"   ⏭️  Skipping {len(skipped)} symbols with no IEX data: "
+                              f"{', '.join(sorted(skipped)[:5])}{'...' if len(skipped) > 5 else ''}")
+                t0 = time.perf_counter()
+                delta = self.fetch_daily_bars(stale_symbols, incremental_start, end_date)
+                dt = time.perf_counter() - t0
+                updated = 0
+                for sym in stale_symbols:
+                    if sym in delta and len(delta[sym]) > 0:
+                        raw_bars[sym] = pd.concat([raw_bars[sym], delta[sym]])
+                        raw_bars[sym] = raw_bars[sym][~raw_bars[sym].index.duplicated(keep='last')]
+                        raw_bars[sym] = raw_bars[sym].sort_index()
+                        updated += 1
+                if verbose:
+                    print(f"   ✅ Updated {updated} symbols in {dt:.1f}s")
+            else:
+                if verbose:
+                    print(f"   ⏭️  All cached symbols are known IEX-absent — skipping API")
 
         # ── Step 3: Full fetch for cache-miss symbols ──────────────────
         if cache_miss_symbols:
