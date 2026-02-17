@@ -37,6 +37,7 @@ class SimulatedPosition:
     entry_date: pd.Timestamp
     signal_strength: float
     current_price: float = 0.0
+    peak_price: float = 0.0      # For trailing stop tracking
 
     @property
     def market_value(self) -> float:
@@ -157,6 +158,8 @@ class SimulationEngine:
                 'side': p.side,
                 'entry_price': p.entry_price,
                 'entry_date': p.entry_date,
+                'current_price': p.current_price,
+                'peak_price': p.peak_price if p.peak_price != 0 else p.entry_price,
             }
             for symbol, p in self.positions.items()
         }
@@ -218,12 +221,18 @@ class SimulationEngine:
                 continue
             today_prices = price_df.loc[date].dropna()
 
-            # Update position prices
+            # Update position prices and peak prices (for trailing stop)
             for symbol, pos in self.positions.items():
                 if symbol in today_prices.index:
                     pos.current_price = today_prices[symbol]
+                    if pos.peak_price == 0:
+                        pos.peak_price = pos.entry_price
+                    if pos.side == 'long':
+                        pos.peak_price = max(pos.peak_price, pos.current_price)
+                    else:
+                        pos.peak_price = min(pos.peak_price, pos.current_price)
 
-            # Generate decisions
+            # Generate decisions (pass current equity for proper sizing)
             decisions = self.executor.generate_decisions_from_signals(
                 signal_df=signal_df,
                 price_df=price_df,
@@ -232,6 +241,7 @@ class SimulationEngine:
                 date=date,
                 current_positions=self.positions_as_dict,
                 config=config,
+                current_equity=self.equity,
             )
 
             # Process decisions through simulation
@@ -328,12 +338,18 @@ class SimulationEngine:
         # Get today's prices
         today_prices = price_df.loc[date].dropna() if date in price_df.index else pd.Series(dtype=float)
 
-        # Update position prices
+        # Update position prices and peak prices (for trailing stop)
         for symbol, pos in self.positions.items():
             if symbol in today_prices.index:
                 pos.current_price = today_prices[symbol]
+                if pos.peak_price == 0:
+                    pos.peak_price = pos.entry_price
+                if pos.side == 'long':
+                    pos.peak_price = max(pos.peak_price, pos.current_price)
+                else:
+                    pos.peak_price = min(pos.peak_price, pos.current_price)
 
-        # Generate decisions
+        # Generate decisions (pass current equity for proper sizing)
         decisions = self.executor.generate_decisions_from_signals(
             signal_df=signal_df,
             price_df=price_df,
@@ -342,6 +358,7 @@ class SimulationEngine:
             date=date,
             current_positions=self.positions_as_dict,
             config=config,
+            current_equity=self.equity,
         )
 
         trades_entered = 0
@@ -448,6 +465,7 @@ class SimulationEngine:
             entry_date=date,
             signal_strength=decision.signal_strength,
             current_price=price,
+            peak_price=entry_price,
         )
 
     def _process_exit(
