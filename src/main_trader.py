@@ -28,6 +28,7 @@ import time
 import signal
 import logging
 import argparse
+import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict
@@ -318,6 +319,9 @@ def run_daily_cycle(
         account = conn.get_account()
         logger.info(f"Account: ${account['portfolio_value']:,.2f} "
                      f"(cash: ${account['cash']:,.2f})")
+        
+        # Save live state for dashboard
+        _save_live_state(conn)
         result["portfolio_value"] = account["portfolio_value"]
         result["cash"] = account["cash"]
 
@@ -354,6 +358,50 @@ def _save_shadow_state(sim: SimulationEngine) -> None:
         if SHADOW_STATE_PATH.exists():
             SHADOW_STATE_PATH.unlink()
         logger.info("No open positions — shadow state cleared")
+
+
+def _save_live_state(conn: AlpacaConnection) -> None:
+    """Save live trading state for dashboard."""
+    state_file = PROJECT_ROOT / "data" / "snapshots" / "live_state.json"
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # Get account info
+        account = conn.get_account()
+        
+        # Get current positions
+        positions = []
+        for pos in conn.get_positions():
+            positions.append({
+                "symbol": pos["symbol"],
+                "qty": int(pos["qty"]),
+                "side": "long" if int(pos["qty"]) > 0 else "short",
+                "entry_price": float(pos["avg_entry_price"]),
+                "current_price": float(pos["current_price"]),
+                "market_value": float(pos["market_value"]),
+                "unrealized_pl": float(pos["unrealized_pl"]),
+                "unrealized_plpc": float(pos["unrealized_plpc"]) * 100,
+            })
+        
+        # Save snapshot
+        snapshot = {
+            "timestamp": datetime.now().isoformat(),
+            "mode": "live",
+            "account": {
+                "equity": float(account["equity"]),
+                "cash": float(account["cash"]),
+                "portfolio_value": float(account["portfolio_value"]),
+                "buying_power": float(account["buying_power"]),
+            },
+            "positions": positions,
+        }
+        
+        with open(state_file, "w") as f:
+            json.dump(snapshot, f, indent=2)
+        
+        logger.info(f"Live state saved ({len(positions)} positions)")
+    except Exception as e:
+        logger.error(f"Failed to save live state: {e}")
 
 
 def _restore_shadow_state(sim: SimulationEngine) -> None:

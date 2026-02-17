@@ -20,6 +20,7 @@ class DashboardGenerator:
         self.project_root = project_root
         self.data_dir = project_root / "data"
         self.shadow_state = self.data_dir / "snapshots" / "shadow_state.csv"
+        self.live_state = self.data_dir / "snapshots" / "live_state.json"
         self.trading_logs_dir = self.data_dir / "snapshots" / "trading_logs"
     
     def generate(self, output_path: Path) -> bool:
@@ -46,6 +47,30 @@ class DashboardGenerator:
     def _load_positions(self) -> List[Dict]:
         """Load current open positions"""
         positions = []
+        
+        # Prefer live state if available
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, 'r') as f:
+                    live_data = json.load(f)
+                
+                for pos in live_data.get('positions', []):
+                    positions.append({
+                        'symbol': pos['symbol'],
+                        'side': pos['side'],
+                        'qty': int(pos['qty']),
+                        'entry_price': float(pos['entry_price']),
+                        'current_price': float(pos['current_price']),
+                        'pnl': float(pos['unrealized_pl']),
+                        'pnl_pct': float(pos['unrealized_plpc']),
+                        'entry_date': 'N/A',  # Not available from Alpaca position
+                        'signal': 0.0,  # Not tracked in live mode
+                    })
+                return positions
+            except Exception as e:
+                print(f"Error loading live positions: {e}")
+        
+        # Fall back to shadow state
         if not self.shadow_state.exists():
             return positions
         
@@ -135,8 +160,22 @@ class DashboardGenerator:
             'sharpe_ratio': 0.0,
         }
         
-        # Current equity
-        if equity_curve:
+        # Try to get current equity from live state first
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, 'r') as f:
+                    live_data = json.load(f)
+                metrics['current_equity'] = live_data['account']['portfolio_value']
+                # Calculate return from $1M starting capital (Alpaca paper account)
+                initial = 1000000.0
+                current = metrics['current_equity']
+                metrics['total_return'] = current - initial
+                metrics['total_return_pct'] = ((current - initial) / initial) * 100
+            except Exception as e:
+                print(f"Error loading live equity: {e}")
+        
+        # Fall back to equity curve if no live state
+        elif equity_curve:
             initial = equity_curve[0]['equity']
             current = equity_curve[-1]['equity']
             metrics['current_equity'] = current
