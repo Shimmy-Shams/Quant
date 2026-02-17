@@ -23,8 +23,8 @@ from alpaca.trading.enums import (
     OrderSide, TimeInForce, OrderStatus, OrderType,
     QueryOrderStatus
 )
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
+from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest, CryptoBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.common.exceptions import APIError
 
@@ -118,6 +118,17 @@ class AlpacaConnection:
             )
             self.logger.info("Data client initialized")
         return self._data_client
+
+    @property
+    def crypto_data_client(self) -> CryptoHistoricalDataClient:
+        """Lazy-initialized crypto market data client"""
+        if not hasattr(self, '_crypto_data_client') or self._crypto_data_client is None:
+            self._crypto_data_client = CryptoHistoricalDataClient(
+                api_key=self.config.api_key,
+                secret_key=self.config.secret_key
+            )
+            self.logger.info("Crypto data client initialized")
+        return self._crypto_data_client
 
     # ─── Account Operations ────────────────────────────────────────────
 
@@ -330,6 +341,77 @@ class AlpacaConnection:
         closed = self.trading_client.close_all_positions(cancel_orders=True)
         self.logger.info(f"Closed {len(closed)} positions")
         return [{'symbol': str(c)} for c in closed]
+
+    # ─── Crypto Orders ──────────────────────────────────────────────────
+
+    def submit_crypto_order(
+        self,
+        symbol: str,
+        notional: float = None,
+        qty: float = None,
+        side: str = 'buy',
+    ) -> Dict:
+        """
+        Submit a crypto market order.
+
+        Crypto uses GTC (good-til-cancelled) since markets are 24/7.
+        Specify either notional (dollar amount) or qty (coin amount), not both.
+
+        Args:
+            symbol: Crypto pair e.g. 'BTC/USD', 'ETH/USD'
+            notional: Dollar amount to buy/sell (e.g. 25.0 for $25)
+            qty: Coin quantity (e.g. 0.001 for 0.001 BTC)
+            side: 'buy' or 'sell'
+
+        Returns:
+            Order details dict
+        """
+        if notional is None and qty is None:
+            raise ValueError("Must specify either notional or qty")
+
+        if self.config.trading_mode != TradingMode.LIVE:
+            self.logger.info(
+                f"[{self.config.trading_mode.value.upper()}] Would submit: "
+                f"{side.upper()} {symbol} "
+                f"{'$' + str(notional) if notional else str(qty) + ' coins'} @ MARKET"
+            )
+            return {
+                'id': f'shadow-{datetime.now().timestamp()}',
+                'symbol': symbol,
+                'qty': qty,
+                'notional': notional,
+                'side': side,
+                'type': 'market',
+                'status': 'simulated',
+                'submitted_at': datetime.now().isoformat(),
+            }
+
+        order_kwargs = dict(
+            symbol=symbol,
+            side=OrderSide.BUY if side == 'buy' else OrderSide.SELL,
+            time_in_force=TimeInForce.GTC,  # Crypto is 24/7, use GTC
+        )
+        if notional is not None:
+            order_kwargs['notional'] = notional
+        else:
+            order_kwargs['qty'] = qty
+
+        order_request = MarketOrderRequest(**order_kwargs)
+        order = self.trading_client.submit_order(order_request)
+        self.logger.info(f"Crypto order submitted: {side.upper()} {symbol} → {order.status}")
+
+        return {
+            'id': str(order.id),
+            'symbol': order.symbol,
+            'qty': float(order.qty) if order.qty else None,
+            'notional': float(order.notional) if order.notional else None,
+            'side': order.side.value,
+            'type': order.type.value,
+            'status': order.status.value,
+            'submitted_at': str(order.submitted_at),
+            'filled_avg_price': float(order.filled_avg_price) if order.filled_avg_price else None,
+            'filled_qty': float(order.filled_qty) if order.filled_qty else None,
+        }
 
     # ─── Market Clock ──────────────────────────────────────────────────
 
