@@ -72,6 +72,8 @@ class SignalConfig:
     gate_signal: str = 'rsi_divergence'  # Signal that controls entries in gated mode
     zscore_boost_factor: float = 0.5     # |zscore| conviction boost in gated mode
 
+    gate_persistence_days: int = 7     # Keep gate active N days after firing (0=fire-day only)
+
     # Dynamic short confidence filter (Phase B.2)
     use_dynamic_short_filter: bool = True
     short_trend_lookback: int = 50        # MA period for trend assessment
@@ -315,9 +317,9 @@ class MeanReversionSignals:
             half_life = self.calculate_ou_half_life(prices)
 
         if half_life is None or half_life <= 0:
-            # Cannot estimate OU parameters; return zeros
-            zeros = pd.Series(0.0, index=prices.index)
-            return zeros, zeros
+            # Cannot estimate OU parameters; return NaN so hurdle gate skips these
+            nans = pd.Series(np.nan, index=prices.index)
+            return nans, nans
 
         theta = np.log(2) / half_life  # Mean-reversion speed
 
@@ -477,7 +479,27 @@ class MeanReversionSignals:
                 if price_arr[curr] > price_arr[prev] and rsi_arr[curr] < rsi_arr[prev]:
                     signal[curr] = 1.0
 
-        return pd.Series(signal, index=prices.index)
+        result = pd.Series(signal, index=prices.index)
+
+        # Gate persistence: forward-fill gate for N days after each fire
+        # Only extend from ORIGINAL fire days (not from already-filled days)
+        persist = self.config.gate_persistence_days
+        if persist > 0:
+            arr = result.values.copy()
+            # `signal` has original fires only (before any fill)
+            n = len(arr)
+            for i in range(n):
+                if signal[i] != 0:  # Only extend from original fires
+                    for j in range(1, persist + 1):
+                        if i + j < n and signal[i + j] == 0:
+                            arr[i + j] = signal[i]
+                        elif i + j < n and signal[i + j] != 0:
+                            break  # Hit another original fire, stop
+                        else:
+                            break
+            result = pd.Series(arr, index=prices.index)
+
+        return result
 
     def cross_sectional_signal(self, price_data: Dict[str, pd.Series], lookback: Optional[int] = None) -> Dict[str, pd.Series]:
         """

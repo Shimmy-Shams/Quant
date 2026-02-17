@@ -80,6 +80,7 @@ signals:
   signal_mode: "gated"
   gate_signal: "rsi_divergence"     # Which signal acts as the entry gate
   zscore_boost_factor: 0.5          # How much |zscore| boosts gated signal (0-1)
+  gate_persistence_days: 7          # Keep gate active for N days after firing (0 = fire-day only)
 
   # Dynamic Short Confidence Filter (Phase B.2)
   # Statistically adapts short entry requirements to market conditions

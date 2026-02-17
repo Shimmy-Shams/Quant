@@ -156,6 +156,7 @@ class ConfigLoader:
             signal_mode=self.get('signals.signal_mode', 'gated'),
             gate_signal=self.get('signals.gate_signal', 'rsi_divergence'),
             zscore_boost_factor=self.get('signals.zscore_boost_factor', 0.5),
+            gate_persistence_days=self.get('signals.gate_persistence_days', 5),
 
             # Dynamic short confidence filter (Phase B.2)
             use_dynamic_short_filter=self.get('signals.dynamic_short_filter.enabled', True),
