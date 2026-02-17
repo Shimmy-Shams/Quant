@@ -416,54 +416,75 @@ class AlpacaDataAdapter:
             if cached:
                 cache_hit = len(cached)
 
-                # Find the latest date across all cached symbols
+                # Find the latest and earliest dates across all cached symbols
                 latest_dates = [df.index.max() for df in cached.values() if len(df) > 0]
+                earliest_dates = [df.index.min() for df in cached.values() if len(df) > 0]
                 if latest_dates:
                     latest_cached = max(latest_dates)
                     latest_cached_dt = pd.Timestamp(latest_cached).to_pydatetime()
+                    earliest_cached = min(earliest_dates)
 
-                    # Trim cached data to requested window
-                    for sym, df in cached.items():
-                        trimmed = df.loc[df.index >= pd.Timestamp(start_date)]
-                        if len(trimmed) > 0:
-                            raw_bars[sym] = trimmed
+                    # Check if cache covers the requested lookback window
+                    requested_start = pd.Timestamp(start_date)
+                    cache_too_short = earliest_cached > requested_start + pd.Timedelta(days=7)
 
-                    # ── Trading calendar check ─────────────────────────
-                    today = datetime.now().date()
-                    cache_date = latest_cached_dt.date()
-                    cache_age_days = (today - cache_date).days
-
-                    # Count actual trading days missed (not calendar days)
-                    next_day = cache_date + timedelta(days=1)
-                    missed_trading_days = _trading_days_between(next_day, today)
-
-                    if missed_trading_days > 0:
-                        need_incremental = True
-                        incremental_start = latest_cached_dt + timedelta(days=1)
+                    if cache_too_short:
+                        # Cache doesn't go back far enough — need full re-fetch
+                        cache_start = earliest_cached.date()
                         if verbose:
-                            print(f"   📦 Cache hit: {cache_hit} symbols "
-                                  f"(latest: {cache_date}, "
-                                  f"{cache_age_days}d ago, "
-                                  f"{missed_trading_days} trading day(s) to fetch)")
+                            print(f"   📦 Cache starts at {cache_start}, "
+                                  f"but lookback requests {start_date.date()}")
+                            print(f"   🔄 Cache too short — will do full re-fetch "
+                                  f"to get {lookback_days} days of history")
+                        # Treat all symbols as cache misses for full fetch
+                        cache_miss_symbols = symbols
+                        raw_bars = {}
+                        cache_hit = 0
                     else:
-                        if verbose:
-                            reason = ""
-                            if today.weekday() >= 5:
-                                reason = " (weekend)"
-                            elif today in _us_market_holidays(today.year):
-                                reason = " (market holiday)"
-                            elif cache_age_days == 0:
-                                reason = ""
-                            else:
-                                reason = " (no missed trading days)"
-                            print(f"   📦 Cache hit: {cache_hit} symbols — "
-                                  f"up to date{reason}, skipping API")
+                        # Trim cached data to requested window
+                        for sym, df in cached.items():
+                            trimmed = df.loc[df.index >= pd.Timestamp(start_date)]
+                            if len(trimmed) > 0:
+                                raw_bars[sym] = trimmed
 
-                # Symbols not in cache need full fetch
-                cache_miss_symbols = [s for s in symbols if s not in raw_bars]
-                if cache_miss_symbols and verbose:
-                    print(f"   🔍 Cache miss: {len(cache_miss_symbols)} symbols "
-                          f"need full fetch")
+                    # ── Trading calendar check (only if cache covers window) ──
+                    if not cache_too_short:
+                        today = datetime.now().date()
+                        cache_date = latest_cached_dt.date()
+                        cache_age_days = (today - cache_date).days
+
+                        # Count actual trading days missed (not calendar days)
+                        next_day = cache_date + timedelta(days=1)
+                        missed_trading_days = _trading_days_between(next_day, today)
+
+                        if missed_trading_days > 0:
+                            need_incremental = True
+                            incremental_start = latest_cached_dt + timedelta(days=1)
+                            if verbose:
+                                print(f"   📦 Cache hit: {cache_hit} symbols "
+                                      f"(latest: {cache_date}, "
+                                      f"{cache_age_days}d ago, "
+                                      f"{missed_trading_days} trading day(s) to fetch)")
+                        else:
+                            if verbose:
+                                reason = ""
+                                if today.weekday() >= 5:
+                                    reason = " (weekend)"
+                                elif today in _us_market_holidays(today.year):
+                                    reason = " (market holiday)"
+                                elif cache_age_days == 0:
+                                    reason = ""
+                                else:
+                                    reason = " (no missed trading days)"
+                                print(f"   📦 Cache hit: {cache_hit} symbols — "
+                                      f"up to date{reason}, skipping API")
+
+                # Symbols not in cache (or cache too short) need full fetch
+                if not cache_too_short:
+                    cache_miss_symbols = [s for s in symbols if s not in raw_bars]
+                    if cache_miss_symbols and verbose:
+                        print(f"   🔍 Cache miss: {len(cache_miss_symbols)} symbols "
+                              f"need full fetch")
             else:
                 cache_miss_symbols = symbols
                 if verbose:
