@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-02-17T07:23:45.000000",
+  "mode": "live",
+  "account": {
+    "equity": 999999.62,
+    "cash": 999975.33,
+    "portfolio_value": 999999.62,
+    "buying_power": 1999950.66
+  },
+  "positions": [
+    {
+      "symbol": "ETHUSD",
+      "qty": 0,
+      "side": "long",
+      "entry_price": 1970.17,
+      "current_price": 1970.17,
+      "market_value": 24.29,
+      "unrealized_pl": -0.10,
+      "unrealized_plpc": -0.41
+    }
+  ],
+  "recent_trades": [
+    {
+      "symbol": "ETHUSD",
+      "side": "buy",
+      "qty": 0.01229,
+      "filled_price": 1970.17,
+      "submitted_at": "2026-02-17T02:18:39.123456Z",
+      "order_id": "abc123"
+    }
+  ]
+}

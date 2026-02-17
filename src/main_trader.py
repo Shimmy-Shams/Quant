@@ -383,6 +383,23 @@ def _save_live_state(conn: AlpacaConnection) -> None:
                 "unrealized_plpc": float(pos["unrealized_plpc"]) * 100,
             })
         
+        # Get recent filled orders (last 50)
+        trades = []
+        try:
+            closed_orders = conn.get_orders(status='closed', limit=50)
+            for order in closed_orders:
+                if order['status'] == 'filled' and order['filled_avg_price']:
+                    trades.append({
+                        "symbol": order["symbol"],
+                        "side": order["side"],
+                        "qty": float(order["qty"]) if order["qty"] else 0,
+                        "filled_price": float(order["filled_avg_price"]),
+                        "submitted_at": order["submitted_at"],
+                        "order_id": order["id"],
+                    })
+        except Exception as e:
+            logger.warning(f"Could not fetch order history: {e}")
+        
         # Save snapshot
         snapshot = {
             "timestamp": datetime.now().isoformat(),
@@ -394,12 +411,13 @@ def _save_live_state(conn: AlpacaConnection) -> None:
                 "buying_power": float(account["buying_power"]),
             },
             "positions": positions,
+            "recent_trades": trades,
         }
         
         with open(state_file, "w") as f:
             json.dump(snapshot, f, indent=2)
         
-        logger.info(f"Live state saved ({len(positions)} positions)")
+        logger.info(f"Live state saved ({len(positions)} positions, {len(trades)} trades)")
     except Exception as e:
         logger.error(f"Failed to save live state: {e}")
 

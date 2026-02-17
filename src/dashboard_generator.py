@@ -122,6 +122,36 @@ class DashboardGenerator:
     def _load_trades(self) -> List[Dict]:
         """Load completed trades"""
         trades = []
+        
+        # Prefer live trades if available
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, 'r') as f:
+                    live_data = json.load(f)
+                
+                for trade in live_data.get('recent_trades', []):
+                    # Group buy/sell pairs by symbol to calculate P&L
+                    # For now, just display the orders
+                    exec_date = trade['submitted_at'][:10] if trade.get('submitted_at') else 'N/A'
+                    trades.append({
+                        'symbol': trade['symbol'],
+                        'side': trade['side'],
+                        'entry_date': exec_date,
+                        'exit_date': exec_date,
+                        'entry_price': float(trade.get('filled_price', 0)),
+                        'exit_price': float(trade.get('filled_price', 0)),
+                        'pnl': 0.0,  # Can't calculate without matching pairs
+                        'pnl_pct': 0.0,
+                        'holding_days': 0,
+                        'exit_reason': f"Signal exit (z={trade.get('signal_z', 'N/A')})" if 'signal_z' in trade else "Order filled"
+                    })
+                
+                if trades:
+                    return sorted(trades, key=lambda x: x['exit_date'], reverse=True)[:50]
+            except Exception as e:
+                print(f"Error loading live trades: {e}")
+        
+        # Fall back to shadow mode trade logs
         if not self.trading_logs_dir.exists():
             return trades
         
