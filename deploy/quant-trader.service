@@ -1,0 +1,33 @@
+[Unit]
+Description=Mean Reversion Trader (Shadow Mode)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/home/trader/Quant
+ExecStart=/home/trader/Quant/venv/bin/python src/main_trader.py --mode shadow
+Restart=on-failure
+RestartSec=60
+
+# Environment
+EnvironmentFile=/home/trader/Quant/.env
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=50%
+
+# Logging (journald picks up stdout/stderr automatically)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=quant-trader
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/trader/Quant/data
+
+[Install]
+WantedBy=multi-user.target
