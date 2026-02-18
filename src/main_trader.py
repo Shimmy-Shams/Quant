@@ -373,13 +373,14 @@ def _save_live_state(conn: AlpacaConnection) -> None:
         # Get current positions
         positions = []
         for pos in conn.get_positions():
+            raw_qty = float(pos["qty"])
             positions.append({
                 "symbol": pos["symbol"],
-                "qty": int(pos["qty"]),
-                "side": "long" if int(pos["qty"]) > 0 else "short",
+                "qty": abs(raw_qty),
+                "side": "long" if raw_qty > 0 else "short",
                 "entry_price": float(pos["avg_entry_price"]),
                 "current_price": float(pos["current_price"]),
-                "market_value": float(pos["market_value"]),
+                "market_value": abs(float(pos["market_value"])),
                 "unrealized_pl": float(pos["unrealized_pl"]),
                 "unrealized_plpc": float(pos["unrealized_plpc"]) * 100,
             })

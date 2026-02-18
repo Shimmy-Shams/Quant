@@ -195,7 +195,7 @@ class DashboardGenerator:
                     positions.append({
                         "symbol": pos["symbol"],
                         "side": pos.get("side", "long"),
-                        "qty": int(pos["qty"]),
+                        "qty": float(pos["qty"]),
                         "entry_price": float(pos["entry_price"]),
                         "current_price": float(pos["current_price"]),
                         "market_value": float(pos.get("market_value", 0)),
@@ -214,11 +214,12 @@ class DashboardGenerator:
                     pnl = (row["current_price"] - row["entry_price"]) * row["qty"]
                     if row["side"] == "short":
                         pnl = -pnl
-                    pnl_pct = (pnl / (row["entry_price"] * abs(row["qty"]))) * 100
+                    cost_basis = row["entry_price"] * abs(row["qty"])
+                    pnl_pct = (pnl / cost_basis) * 100 if cost_basis > 0 else 0
                     positions.append({
                         "symbol": row["symbol"],
                         "side": row["side"],
-                        "qty": int(row["qty"]),
+                        "qty": float(row["qty"]),
                         "entry_price": float(row["entry_price"]),
                         "current_price": float(row["current_price"]),
                         "market_value": float(row["current_price"] * abs(row["qty"])),
@@ -625,7 +626,8 @@ class DashboardGenerator:
         for (const p of DATA.positions) {{
             const q = liveQuotes[p.symbol];
             const curPrice = effectivePrice(p.symbol, q) || p.current_price;
-            positionValue += curPrice * Math.abs(p.qty);
+            const mktVal = curPrice * Math.abs(p.qty);
+            positionValue += p.side === 'short' ? -mktVal : mktVal;
         }}
         if (Object.keys(liveQuotes).length > 0 && DATA.positions.length > 0) {{
             return DATA.account.cash + positionValue;
@@ -677,7 +679,8 @@ class DashboardGenerator:
             const pnl = p.side === 'short'
                 ? (p.entry_price - curPrice) * Math.abs(p.qty)
                 : (curPrice - p.entry_price) * Math.abs(p.qty);
-            const pnlPct = (pnl / (p.entry_price * Math.abs(p.qty))) * 100;
+            const costBasis = p.entry_price * Math.abs(p.qty);
+            const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
             const mktVal = curPrice * Math.abs(p.qty);
             const pctOfPortfolio = pv > 0 ? (mktVal / pv) * 100 : 0;
             totalPnl += pnl;
@@ -716,15 +719,15 @@ class DashboardGenerator:
                 </td>
                 <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
                 <td>${{Math.abs(p.qty)}}</td>
-                <td>$$${{fmt(p.entry_price)}}</td>
+                <td>$${{fmt(p.entry_price)}}</td>
                 <td data-sym="${{p.symbol}}">
-                    $$${{fmt(curPrice)}}
+                    $${{fmt(curPrice)}}
                     ${{ahBadge}}
                 </td>
                 <td class="${{dayChangePct != null ? cls(dayChangePct) : ''}}">${{dayChangePct != null ? fmtP(dayChangePct) : '—'}}</td>
-                <td>$$${{fmt(mktVal)}}</td>
+                <td>$${{fmt(mktVal)}}</td>
                 <td>${{fmt(pctOfPortfolio, 1)}}%</td>
-                <td class="${{cls(pnl)}}">$$${{fmt(pnl)}}</td>
+                <td class="${{cls(pnl)}}">$${{fmt(pnl)}}</td>
                 <td class="${{cls(pnlPct)}}">${{fmtP(pnlPct)}}</td>
             </tr>`;
         }}
@@ -740,9 +743,9 @@ class DashboardGenerator:
                 <tbody>${{rows}}</tbody>
                 <tfoot><tr>
                     <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
-                    <td style="font-weight:600;">$$${{fmt(totalMktVal)}}</td>
+                    <td style="font-weight:600;">$${{fmt(totalMktVal)}}</td>
                     <td style="font-weight:600;">${{fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}}%</td>
-                    <td class="${{cls(totalPnl)}}" style="font-weight:600;">$$${{fmt(totalPnl)}}</td>
+                    <td class="${{cls(totalPnl)}}" style="font-weight:600;">$${{fmt(totalPnl)}}</td>
                     <td></td>
                 </tr></tfoot>
             </table>`;
@@ -778,9 +781,9 @@ class DashboardGenerator:
             let priceInfo = '';
             if (q) {{
                 priceInfo = `
-                    <span class="watch-price">$$${{fmt(q.price)}}</span>
+                    <span class="watch-price">$${{fmt(q.price)}}</span>
                     <span class="${{cls(q.changePct)}}">${{fmtP(q.changePct)}}</span>
-                    <span class="watch-detail-inline">H:$$${{fmt(q.dayHigh)}} L:$$${{fmt(q.dayLow)}}</span>
+                    <span class="watch-detail-inline">H:$${{fmt(q.dayHigh)}} L:$${{fmt(q.dayLow)}}</span>
                     <span class="watch-detail-inline">Vol:${{q.volume ? (q.volume/1e6).toFixed(1)+'M' : '—'}}</span>
                 `;
             }}
@@ -839,7 +842,7 @@ class DashboardGenerator:
                 <td><strong>${{t.symbol}}</strong></td>
                 <td><span class="badge badge-${{t.side}}">${{t.side.toUpperCase()}}</span></td>
                 <td>${{t.qty}}</td>
-                <td>$$${{fmt(t.price)}}</td>
+                <td>$${{fmt(t.price)}}</td>
                 <td>${{t.date}}</td>
                 <td>${{t.pnl_pct != null ? `<span class="${{cls(t.pnl_pct)}}">${{fmtP(t.pnl_pct)}}</span>` : '—'}}</td>
                 <td><span class="badge badge-filled">${{t.status}}</span></td>
@@ -927,7 +930,7 @@ class DashboardGenerator:
         const sign = diff >= 0 ? '+' : '';
         const color = diff >= 0 ? '#3fb950' : '#f85149';
         const rangeLabels = {{ '1d': 'Today', '1m': 'Past Month', '3m': 'Past 3 Months', '1y': 'Past Year', 'all': 'All Time' }};
-        chEl.innerHTML = `<span style="color:${{color}}">${{sign}}$$${{Math.abs(diff).toLocaleString(undefined,{{minimumFractionDigits:2,maximumFractionDigits:2}})}} (${{sign}}${{pct.toFixed(2)}}%)</span>  <span class="equity-range-label">${{rangeLabels[currentEquityRange] || ''}}</span>`;
+        chEl.innerHTML = `<span style="color:${{color}}">${{sign}}$${{Math.abs(diff).toLocaleString(undefined,{{minimumFractionDigits:2,maximumFractionDigits:2}})}} (${{sign}}${{pct.toFixed(2)}}%)</span>  <span class="equity-range-label">${{rangeLabels[currentEquityRange] || ''}}</span>`;
         el.style.color = color;
     }}
 
