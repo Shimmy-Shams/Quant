@@ -401,11 +401,12 @@ def _save_live_state(conn: AlpacaConnection) -> None:
             logger.warning(f"Could not fetch order history: {e}")
         
         # Save snapshot
+        equity_val = float(account["equity"])
         snapshot = {
             "timestamp": datetime.now().isoformat(),
             "mode": "live",
             "account": {
-                "equity": float(account["equity"]),
+                "equity": equity_val,
                 "cash": float(account["cash"]),
                 "portfolio_value": float(account["portfolio_value"]),
                 "buying_power": float(account["buying_power"]),
@@ -416,6 +417,30 @@ def _save_live_state(conn: AlpacaConnection) -> None:
         
         with open(state_file, "w") as f:
             json.dump(snapshot, f, indent=2)
+        
+        # ── Accumulate equity history for dashboard chart ──
+        equity_history_file = PROJECT_ROOT / "data" / "snapshots" / "equity_history.json"
+        try:
+            history = []
+            if equity_history_file.exists():
+                with open(equity_history_file, "r") as f:
+                    history = json.load(f)
+            
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            # Avoid duplicate entries within the same minute
+            if not history or history[-1].get("timestamp", "")[:16] != now_str:
+                history.append({
+                    "timestamp": now_str,
+                    "equity": equity_val,
+                })
+                # Keep last 2000 data points (~30 days at 1 per minute trading hours)
+                history = history[-2000:]
+                
+                with open(equity_history_file, "w") as f:
+                    json.dump(history, f)
+                    
+        except Exception as e:
+            logger.warning(f"Could not update equity history: {e}")
         
         logger.info(f"Live state saved ({len(positions)} positions, {len(trades)} trades)")
     except Exception as e:

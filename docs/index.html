@@ -92,7 +92,7 @@ th {
     border-bottom: 2px solid #30363d;
     color: #8b949e;
     font-weight: 500;
-    font-size: 0.85em;
+    font-size: 0.82em;
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
@@ -136,6 +136,57 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 /* Chart */
 .chart-container { height: 350px; position: relative; }
 
+/* Watchlist */
+.watchlist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+}
+.watch-card {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    transition: border-color 0.2s;
+}
+.watch-card:hover { border-color: #667eea; }
+.watch-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.watch-links a {
+    color: #667eea;
+    text-decoration: none;
+    font-size: 0.85em;
+    font-weight: 600;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+.watch-links a:hover { background: #667eea; color: #fff; border-color: #667eea; }
+.watch-price {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.watch-details {
+    display: flex;
+    gap: 16px;
+    font-size: 0.82em;
+    color: #8b949e;
+    margin-top: 4px;
+}
+.tradingview-widget {
+    margin-top: 10px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #21262d;
+}
+
 /* Footer */
 .footer {
     text-align: center;
@@ -157,6 +208,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
     .header-right { text-align: left; }
     .metrics-grid { grid-template-columns: repeat(2, 1fr); }
     .metric-value { font-size: 1.3em; }
+    .watchlist-grid { grid-template-columns: 1fr; }
 }
 
     </style>
@@ -188,6 +240,12 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             <div id="positions-table" class="table-wrap"></div>
         </div>
 
+        <!-- Watchlist / TradingView Charts -->
+        <div class="section" id="watchlist-section" style="display:none;">
+            <div class="section-title">Watchlist &amp; Charts</div>
+            <div id="watchlist-grid" class="watchlist-grid"></div>
+        </div>
+
         <!-- Equity Curve -->
         <div class="section">
             <div class="section-title">Equity Curve</div>
@@ -195,7 +253,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 <canvas id="equityChart"></canvas>
             </div>
             <p id="no-equity" class="muted" style="display:none;">
-                Equity curve data will appear after shadow replay or trading cycles.
+                Equity curve data will appear after trading cycles accumulate snapshots.
             </p>
         </div>
 
@@ -207,17 +265,17 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
         <footer class="footer">
             Dashboard data pushed after each trading cycle &middot;
-            Live prices fetched from Yahoo Finance on page load &middot;
+            Live prices fetched from Yahoo Finance every 3s &middot;
             <a href="https://github.com/Shimmy-Shams/Quant" target="_blank">GitHub</a>
         </footer>
     </div>
 
     <script>
     // ── Embedded server-side data ─────────────────────────────────────────
-    const DATA = {"positions": [{"symbol": "CRWD", "side": "long", "qty": 232, "entry_price": 413.960733, "current_price": 413.0, "market_value": 95816.0, "pnl": -222.890056, "pnl_pct": -0.232}, {"symbol": "ETHUSD", "side": "short", "qty": 0, "entry_price": 1989.4, "current_price": 2020.9, "market_value": 24.839389, "pnl": 0.387174, "pnl_pct": 1.583}], "trades": [{"symbol": "CRWD", "side": "buy", "qty": 232.0, "price": 413.960733, "date": "2026-02-17", "status": "filled"}, {"symbol": "ETH/USD", "side": "buy", "qty": 0.0, "price": 1989.4, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "sell", "qty": 0.000356827, "price": 68441.72, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "buy", "qty": 0.0, "price": 68504.9, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999777.28, "cash": 903936.44, "portfolio_value": 999777.28, "buying_power": 1903688.88}, "equity_curve": [], "metrics": {"portfolio_value": 999777.28, "cash": 903936.44, "buying_power": 1903688.88, "total_return_pct": -0.022271999999997207, "total_trades": 4, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "generated_utc": "2026-02-18 08:39:35"};
+    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "generated_utc": "2026-02-18 09:02:08"};
 
     // ── Configuration ─────────────────────────────────────────────────────
-    const REFRESH_INTERVAL = 30;          // seconds between price refreshes
+    const REFRESH_INTERVAL = 3;           // seconds between price refreshes
     const INITIAL_CAPITAL   = 1000000;
     const CORS_PROXIES = [
         url => 'https://corsproxy.io/?' + encodeURIComponent(url),
@@ -226,6 +284,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
     let countdown = REFRESH_INTERVAL;
     let liveQuotes = {};  // symbol -> quote data
+    let equityChart = null;
 
     // ── Utilities ─────────────────────────────────────────────────────────
     const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d});
@@ -236,7 +295,14 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
     // ── Yahoo Finance live price fetcher ──────────────────────────────────
     async function fetchLiveQuotes(symbols) {
         if (!symbols.length) return {};
-        const symStr = symbols.join(',');
+        // Convert crypto symbols: ETHUSD -> ETH-USD for Yahoo
+        const yahooSymbols = symbols.map(s => {
+            if (s.endsWith('USD') && s.length <= 7 && !s.includes('-')) {
+                return s.slice(0, -3) + '-USD';
+            }
+            return s;
+        });
+        const symStr = yahooSymbols.join(',');
         const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symStr}`;
 
         for (const makeProxy of CORS_PROXIES) {
@@ -248,7 +314,16 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 if (!results) continue;
                 const out = {};
                 for (const q of results) {
-                    out[q.symbol] = {
+                    // Map back: ETH-USD -> ETHUSD
+                    let sym = q.symbol;
+                    const origSym = symbols.find(s => {
+                        if (s.endsWith('USD') && s.length <= 7 && !s.includes('-')) {
+                            return s.slice(0,-3) + '-USD' === sym;
+                        }
+                        return s === sym;
+                    });
+                    const key = origSym || sym;
+                    out[key] = {
                         price:           q.regularMarketPrice,
                         change:          q.regularMarketChange,
                         changePct:       q.regularMarketChangePercent,
@@ -260,6 +335,13 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                         postChange:      q.postMarketChange,
                         postChangePct:   q.postMarketChangePercent,
                         name:            q.shortName || q.symbol,
+                        dayHigh:         q.regularMarketDayHigh,
+                        dayLow:          q.regularMarketDayLow,
+                        volume:          q.regularMarketVolume,
+                        avgVolume:       q.averageDailyVolume3Month,
+                        fiftyTwoHigh:    q.fiftyTwoWeekHigh,
+                        fiftyTwoLow:     q.fiftyTwoWeekLow,
+                        previousClose:   q.regularMarketPreviousClose,
                     };
                 }
                 return out;
@@ -276,14 +358,15 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         const m = DATA.metrics;
         const a = DATA.account;
         const pv = livePortfolioValue();
+        const dayPnl = calculateDayPnl();
 
         const cards = [
             { label: 'Portfolio Value', value: fmtD(pv), cls: '' },
             { label: 'Cash', value: fmtD(a.cash), cls: '' },
+            { label: 'Day P&L', value: fmtD(dayPnl), cls: cls(dayPnl) },
             { label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) },
             { label: 'Open Positions', value: DATA.positions.length, cls: '' },
             { label: 'Trades Executed', value: m.total_trades, cls: '' },
-            { label: 'Sharpe Ratio', value: fmt(m.sharpe_ratio), cls: m.sharpe_ratio >= 0 ? 'positive' : 'negative' },
         ];
 
         document.getElementById('metrics-grid').innerHTML = cards.map(c => `
@@ -292,6 +375,19 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 <div class="metric-value ${c.cls}">${c.value}</div>
             </div>
         `).join('');
+    }
+
+    function calculateDayPnl() {
+        let total = 0;
+        for (const p of DATA.positions) {
+            const q = liveQuotes[p.symbol];
+            if (q && q.previousClose) {
+                const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+                const dayChange = curPrice - q.previousClose;
+                total += dayChange * Math.abs(p.qty) * (p.side === 'short' ? -1 : 1);
+            }
+        }
+        return total;
     }
 
     function livePortfolioValue() {
@@ -323,8 +419,11 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             return;
         }
 
+        const pv = livePortfolioValue();
         let rows = '';
         let totalPnl = 0;
+        let totalMktVal = 0;
+
         for (const p of positions) {
             const q = liveQuotes[p.symbol];
             const livePrice = effectivePrice(p.symbol, q);
@@ -333,8 +432,20 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 ? (p.entry_price - curPrice) * Math.abs(p.qty)
                 : (curPrice - p.entry_price) * Math.abs(p.qty);
             const pnlPct = (pnl / (p.entry_price * Math.abs(p.qty))) * 100;
+            const mktVal = curPrice * Math.abs(p.qty);
+            const pctOfPortfolio = pv > 0 ? (mktVal / pv) * 100 : 0;
             totalPnl += pnl;
+            totalMktVal += mktVal;
 
+            // Day change from Yahoo
+            let dayChangePct = null;
+            let dayChangeAmt = null;
+            if (q) {
+                dayChangePct = q.changePct;
+                dayChangeAmt = q.change;
+            }
+
+            // After-hours / pre-market badge
             let ahBadge = '';
             if (q) {
                 const state = q.marketState;
@@ -359,6 +470,9 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                     $$${fmt(curPrice)}
                     ${ahBadge}
                 </td>
+                <td class="${dayChangePct != null ? cls(dayChangePct) : ''}">${dayChangePct != null ? fmtP(dayChangePct) : '—'}</td>
+                <td>$$${fmt(mktVal)}</td>
+                <td>${fmt(pctOfPortfolio, 1)}%</td>
                 <td class="${cls(pnl)}">$$${fmt(pnl)}</td>
                 <td class="${cls(pnlPct)}">${fmtP(pnlPct)}</td>
             </tr>`;
@@ -368,15 +482,78 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             <table>
                 <thead><tr>
                     <th>Symbol</th><th>Side</th><th>Qty</th>
-                    <th>Entry</th><th>Current</th><th>P&amp;L</th><th>P&amp;L %</th>
+                    <th>Entry</th><th>Current</th><th>Day Chg</th>
+                    <th>Mkt Value</th><th>% Port</th>
+                    <th>P&amp;L</th><th>P&amp;L %</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
                 <tfoot><tr>
-                    <td colspan="5" style="text-align:right;font-weight:600;">Total Unrealized P&amp;L</td>
+                    <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
+                    <td style="font-weight:600;">$$${fmt(totalMktVal)}</td>
+                    <td style="font-weight:600;">${fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}%</td>
                     <td class="${cls(totalPnl)}" style="font-weight:600;">$$${fmt(totalPnl)}</td>
                     <td></td>
                 </tr></tfoot>
             </table>`;
+    }
+
+    function renderWatchlist() {
+        const positions = DATA.positions;
+        if (!positions.length) {
+            document.getElementById('watchlist-section').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('watchlist-section').style.display = 'block';
+
+        const cards = positions.map(p => {
+            const q = liveQuotes[p.symbol];
+            // TradingView symbol format
+            const tvSymbol = p.symbol.endsWith('USD') && p.symbol.length <= 7 && !p.symbol.includes('-')
+                ? 'COINBASE:' + p.symbol.slice(0, -3) + 'USD'
+                : p.symbol;
+            // Yahoo Finance symbol
+            const yahooSym = p.symbol.endsWith('USD') && p.symbol.length <= 7 && !p.symbol.includes('-')
+                ? p.symbol.slice(0, -3) + '-USD'
+                : p.symbol;
+
+            let priceInfo = '';
+            if (q) {
+                priceInfo = `
+                    <div class="watch-price">$$${fmt(q.price)}</div>
+                    <div class="${cls(q.changePct)}" style="font-size:0.9em;">${fmtP(q.changePct)}</div>
+                    <div class="watch-details">
+                        <span>H: $$${fmt(q.dayHigh)}</span>
+                        <span>L: $$${fmt(q.dayLow)}</span>
+                    </div>
+                    <div class="watch-details">
+                        <span>Vol: ${q.volume ? (q.volume / 1e6).toFixed(1) + 'M' : '—'}</span>
+                        <span>52H: $$${fmt(q.fiftyTwoHigh)}</span>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="watch-card">
+                    <div class="watch-header">
+                        <div>
+                            <strong>${p.symbol}</strong>
+                            ${q ? `<span class="stock-name"> ${q.name}</span>` : ''}
+                        </div>
+                        <div class="watch-links">
+                            <a href="https://finance.yahoo.com/quote/${yahooSym}" target="_blank" title="Yahoo Finance">Y!</a>
+                            <a href="https://www.tradingview.com/chart/?symbol=${tvSymbol}" target="_blank" title="TradingView">TV</a>
+                        </div>
+                    </div>
+                    ${priceInfo}
+                    <div class="tradingview-widget">
+                        <iframe src="https://s.tradingview.com/widgetembed/?symbol=${tvSymbol}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=1&padding=0"
+                            style="width:100%;height:200px;border:none;" allowtransparency="true"></iframe>
+                    </div>
+                </div>`;
+        }).join('');
+
+        document.getElementById('watchlist-grid').innerHTML = cards;
     }
 
     function renderTrades() {
@@ -414,14 +591,30 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             document.getElementById('no-equity').style.display = 'block';
             return;
         }
+        document.getElementById('no-equity').style.display = 'none';
+
+        // Thin out data if too many points for readability
+        let chartData = eq;
+        if (eq.length > 300) {
+            const step = Math.ceil(eq.length / 300);
+            chartData = eq.filter((_, i) => i % step === 0 || i === eq.length - 1);
+        }
+
         const ctx = document.getElementById('equityChart').getContext('2d');
-        new Chart(ctx, {
+        if (equityChart) {
+            equityChart.data.labels = chartData.map(d => d.date);
+            equityChart.data.datasets[0].data = chartData.map(d => d.equity);
+            equityChart.update('none');
+            return;
+        }
+
+        equityChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: eq.map(d => d.date),
+                labels: chartData.map(d => d.date),
                 datasets: [{
                     label: 'Equity',
-                    data: eq.map(d => d.equity),
+                    data: chartData.map(d => d.equity),
                     borderColor: '#667eea',
                     backgroundColor: 'rgba(102,126,234,0.08)',
                     borderWidth: 2,
@@ -434,6 +627,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -489,7 +683,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         if (Object.keys(quotes).length > 0) {
             liveQuotes = quotes;
             document.getElementById('price-status').innerHTML =
-                '<span class="live-dot">&#9679;</span> Live prices (auto-refresh every 30s)';
+                '<span class="live-dot">&#9679;</span> Live prices (auto-refresh every ' + REFRESH_INTERVAL + 's)';
         } else {
             document.getElementById('price-status').textContent = 'Using cached prices (live fetch unavailable)';
         }
@@ -520,6 +714,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         renderPositions();
         renderTrades();
         renderEquityChart();
+        renderWatchlist();
 
         await refreshPrices();
         startCountdown();
