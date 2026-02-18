@@ -867,7 +867,12 @@ class DashboardGenerator:
             case '1y': cutoff = new Date(now.getFullYear()-1, now.getMonth(), now.getDate()); break;
             default:   return eq;
         }}
-        return eq.filter(d => new Date(d.date) >= cutoff);
+        return eq.filter(d => {{
+            // Live points always included; use isoDate for accurate parsing
+            if (d.isLive) return true;
+            const dt = new Date(d.isoDate || d.date);
+            return !isNaN(dt) && dt >= cutoff;
+        }});
     }}
 
     function setEquityRange(range) {{
@@ -1031,28 +1036,31 @@ class DashboardGenerator:
         const equity = livePortfolioValue();
         if (equity == null || equity <= 0) return;
 
-        // Build a timestamp label (HH:MM format in local time)
+        // Full ISO date so range filters (1D, 1M, etc.) can parse it
         const now = new Date();
-        const label = now.toLocaleTimeString('en-US', {{ hour: '2-digit', minute: '2-digit', hour12: false }});
+        const iso = now.toISOString();                 // e.g. "2026-02-18T15:42:00.000Z"
+        const minuteKey = iso.slice(0, 16);            // e.g. "2026-02-18T15:42"
 
         // Don't push if equity hasn't changed since last append
         if (lastLiveEquity !== null && Math.abs(equity - lastLiveEquity) < 0.01) return;
         lastLiveEquity = equity;
 
-        // If the last point in equity_curve is a live point (has isLive flag),
-        // replace it so we don't accumulate hundreds of points per session.
-        // Keep max 1 live point per minute.
+        // Display label: "Feb 18 15:42" — compact for chart axis
+        const label = now.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }})
+                    + ' ' + now.toLocaleTimeString('en-US', {{ hour: '2-digit', minute: '2-digit', hour12: false }});
+
+        // If the last point is a live point in the same minute, update in place.
+        // Otherwise append a new point (1 point per minute max).
         const eq = DATA.equity_curve;
         if (eq.length > 0 && eq[eq.length - 1].isLive) {{
-            const lastLabel = eq[eq.length - 1].date;
-            // Same minute? Update in place. Different minute? Keep both.
-            if (lastLabel === label) {{
+            const lastKey = (eq[eq.length - 1].isoDate || '').slice(0, 16);
+            if (lastKey === minuteKey) {{
                 eq[eq.length - 1].equity = equity;
             }} else {{
-                eq.push({{ date: label, equity: equity, isLive: true }});
+                eq.push({{ date: label, isoDate: iso, equity: equity, isLive: true }});
             }}
         }} else {{
-            eq.push({{ date: label, equity: equity, isLive: true }});
+            eq.push({{ date: label, isoDate: iso, equity: equity, isLive: true }});
         }}
     }}
 
