@@ -287,14 +287,27 @@ class DashboardGenerator:
 
         <!-- Watchlist / TradingView Charts -->
         <div class="section" id="watchlist-section" style="display:none;">
-            <div class="section-title">Watchlist &amp; Charts</div>
-            <div id="watchlist-grid" class="watchlist-grid"></div>
+            <div class="section-header">
+                <div class="section-title">Watchlist &amp; Charts</div>
+                <div id="watchlist-toggle" class="toggle-group"></div>
+            </div>
+            <div id="watchlist-chart" style="display:none;"></div>
+            <div id="watchlist-info"></div>
         </div>
 
         <!-- Equity Curve -->
         <div class="section">
-            <div class="section-title">Equity Curve</div>
-            <div class="chart-container">
+            <div class="section-header">
+                <div class="section-title">Equity Curve</div>
+                <div id="equity-range-toggle" class="toggle-group">
+                    <button class="toggle-btn active" data-range="all" onclick="setEquityRange('all')">All</button>
+                    <button class="toggle-btn" data-range="1y" onclick="setEquityRange('1y')">1Y</button>
+                    <button class="toggle-btn" data-range="3m" onclick="setEquityRange('3m')">3M</button>
+                    <button class="toggle-btn" data-range="1m" onclick="setEquityRange('1m')">1M</button>
+                    <button class="toggle-btn" data-range="1d" onclick="setEquityRange('1d')">1D</button>
+                </div>
+            </div>
+            <div class="chart-container chart-lg">
                 <canvas id="equityChart"></canvas>
             </div>
             <p id="no-equity" class="muted" style="display:none;">
@@ -310,7 +323,7 @@ class DashboardGenerator:
 
         <footer class="footer">
             Dashboard data pushed after each trading cycle &middot;
-            Live prices fetched from Yahoo Finance every 3s &middot;
+            Live prices fetched from Yahoo Finance every 5s &middot;
             <a href="https://github.com/Shimmy-Shams/Quant" target="_blank">GitHub</a>
         </footer>
     </div>
@@ -320,7 +333,7 @@ class DashboardGenerator:
     const DATA = {data_blob};
 
     // ── Configuration ─────────────────────────────────────────────────────
-    const REFRESH_INTERVAL = 3;           // seconds between price refreshes
+    const REFRESH_INTERVAL = 5;           // seconds between price refreshes
     const INITIAL_CAPITAL   = 1000000;
     const CORS_PROXIES = [
         url => 'https://corsproxy.io/?' + encodeURIComponent(url),
@@ -330,6 +343,9 @@ class DashboardGenerator:
     let countdown = REFRESH_INTERVAL;
     let liveQuotes = {{}};  // symbol -> quote data
     let equityChart = null;
+    let activeWatchSymbol = null;
+    let currentEquityRange = 'all';
+    let fetchCount = 0;
 
     // ── Utilities ─────────────────────────────────────────────────────────
     const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {{minimumFractionDigits:d, maximumFractionDigits:d}});
@@ -338,37 +354,36 @@ class DashboardGenerator:
     const cls  = (v)      => v >= 0 ? 'positive' : 'negative';
 
     // ── Yahoo Finance live price fetcher ──────────────────────────────────
+    function toYahooSymbol(s) {{
+        if (s.endsWith('USD') && s.length <= 7 && !s.includes('-'))
+            return s.slice(0, -3) + '-USD';
+        return s;
+    }}
+
     async function fetchLiveQuotes(symbols) {{
         if (!symbols.length) return {{}};
-        // Convert crypto symbols: ETHUSD -> ETH-USD for Yahoo
-        const yahooSymbols = symbols.map(s => {{
-            if (s.endsWith('USD') && s.length <= 7 && !s.includes('-')) {{
-                return s.slice(0, -3) + '-USD';
-            }}
-            return s;
-        }});
+        const yahooSymbols = symbols.map(toYahooSymbol);
         const symStr = yahooSymbols.join(',');
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${{symStr}}`;
+        // Cache-bust: append unique timestamp to defeat proxy caching
+        const cacheBust = Date.now() + '_' + (fetchCount++);
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${{symStr}}&_=${{cacheBust}}`;
 
         for (const makeProxy of CORS_PROXIES) {{
             try {{
-                const resp = await fetch(makeProxy(url), {{ signal: AbortSignal.timeout(8000) }});
+                const resp = await fetch(makeProxy(url), {{
+                    signal: AbortSignal.timeout(8000),
+                    cache: 'no-store',
+                    headers: {{ 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }}
+                }});
                 if (!resp.ok) continue;
                 const json = await resp.json();
                 const results = json?.quoteResponse?.result;
                 if (!results) continue;
                 const out = {{}};
                 for (const q of results) {{
-                    // Map back: ETH-USD -> ETHUSD
                     let sym = q.symbol;
-                    const origSym = symbols.find(s => {{
-                        if (s.endsWith('USD') && s.length <= 7 && !s.includes('-')) {{
-                            return s.slice(0,-3) + '-USD' === sym;
-                        }}
-                        return s === sym;
-                    }});
-                    const key = origSym || sym;
-                    out[key] = {{
+                    const origSym = symbols.find(s => toYahooSymbol(s) === sym) || sym;
+                    out[origSym] = {{
                         price:           q.regularMarketPrice,
                         change:          q.regularMarketChange,
                         changePct:       q.regularMarketChangePercent,
@@ -542,6 +557,11 @@ class DashboardGenerator:
             </table>`;
     }}
 
+    function toTvSymbol(s) {{
+        return (s.endsWith('USD') && s.length <= 7 && !s.includes('-'))
+            ? 'COINBASE:' + s.slice(0,-3) + 'USD' : s;
+    }}
+
     function renderWatchlist() {{
         const positions = DATA.positions;
         if (!positions.length) {{
@@ -551,54 +571,62 @@ class DashboardGenerator:
 
         document.getElementById('watchlist-section').style.display = 'block';
 
-        const cards = positions.map(p => {{
-            const q = liveQuotes[p.symbol];
-            // TradingView symbol format
-            const tvSymbol = p.symbol.endsWith('USD') && p.symbol.length <= 7 && !p.symbol.includes('-')
-                ? 'COINBASE:' + p.symbol.slice(0, -3) + 'USD'
-                : p.symbol;
-            // Yahoo Finance symbol
-            const yahooSym = p.symbol.endsWith('USD') && p.symbol.length <= 7 && !p.symbol.includes('-')
-                ? p.symbol.slice(0, -3) + '-USD'
-                : p.symbol;
+        // Build toggle buttons
+        const toggleEl = document.getElementById('watchlist-toggle');
+        let btns = positions.map(p => {{
+            const isActive = activeWatchSymbol === p.symbol;
+            return `<button class="toggle-btn ${{isActive ? 'active' : ''}}" onclick="selectWatchSymbol('${{p.symbol}}')">${{p.symbol}}</button>`;
+        }}).join('');
+        btns += `<button class="toggle-btn ${{!activeWatchSymbol ? 'active' : ''}}" onclick="selectWatchSymbol(null)">None</button>`;
+        toggleEl.innerHTML = btns;
 
+        // Render info cards for all positions (compact, no charts)
+        const infoCards = positions.map(p => {{
+            const q = liveQuotes[p.symbol];
+            const yahooSym = toYahooSymbol(p.symbol);
+            const tvSymbol = toTvSymbol(p.symbol);
             let priceInfo = '';
             if (q) {{
                 priceInfo = `
-                    <div class="watch-price">$$${{fmt(q.price)}}</div>
-                    <div class="${{cls(q.changePct)}}" style="font-size:0.9em;">${{fmtP(q.changePct)}}</div>
-                    <div class="watch-details">
-                        <span>H: $$${{fmt(q.dayHigh)}}</span>
-                        <span>L: $$${{fmt(q.dayLow)}}</span>
-                    </div>
-                    <div class="watch-details">
-                        <span>Vol: ${{q.volume ? (q.volume / 1e6).toFixed(1) + 'M' : '—'}}</span>
-                        <span>52H: $$${{fmt(q.fiftyTwoHigh)}}</span>
-                    </div>
+                    <span class="watch-price">$$${{fmt(q.price)}}</span>
+                    <span class="${{cls(q.changePct)}}">${{fmtP(q.changePct)}}</span>
+                    <span class="watch-detail-inline">H:$$${{fmt(q.dayHigh)}} L:$$${{fmt(q.dayLow)}}</span>
+                    <span class="watch-detail-inline">Vol:${{q.volume ? (q.volume/1e6).toFixed(1)+'M' : '—'}}</span>
                 `;
             }}
-
-            return `
-                <div class="watch-card">
-                    <div class="watch-header">
-                        <div>
-                            <strong>${{p.symbol}}</strong>
-                            ${{q ? `<span class="stock-name"> ${{q.name}}</span>` : ''}}
-                        </div>
-                        <div class="watch-links">
-                            <a href="https://finance.yahoo.com/quote/${{yahooSym}}" target="_blank" title="Yahoo Finance">Y!</a>
-                            <a href="https://www.tradingview.com/chart/?symbol=${{tvSymbol}}" target="_blank" title="TradingView">TV</a>
-                        </div>
-                    </div>
-                    ${{priceInfo}}
-                    <div class="tradingview-widget">
-                        <iframe src="https://s.tradingview.com/widgetembed/?symbol=${{tvSymbol}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=1&padding=0"
-                            style="width:100%;height:200px;border:none;" allowtransparency="true"></iframe>
-                    </div>
-                </div>`;
+            return `<div class="watch-info-row ${{activeWatchSymbol === p.symbol ? 'active' : ''}}" onclick="selectWatchSymbol('${{p.symbol}}')">
+                <div class="watch-info-left">
+                    <strong>${{p.symbol}}</strong>
+                    ${{q ? `<span class="stock-name">${{q.name}}</span>` : ''}}
+                </div>
+                <div class="watch-info-mid">${{priceInfo}}</div>
+                <div class="watch-links">
+                    <a href="https://finance.yahoo.com/quote/${{yahooSym}}" target="_blank" onclick="event.stopPropagation()">Y!</a>
+                    <a href="https://www.tradingview.com/chart/?symbol=${{tvSymbol}}" target="_blank" onclick="event.stopPropagation()">TV</a>
+                </div>
+            </div>`;
         }}).join('');
+        document.getElementById('watchlist-info').innerHTML = infoCards;
 
-        document.getElementById('watchlist-grid').innerHTML = cards;
+        // Render chart for selected symbol only
+        const chartEl = document.getElementById('watchlist-chart');
+        if (activeWatchSymbol) {{
+            const tvSymbol = toTvSymbol(activeWatchSymbol);
+            chartEl.style.display = 'block';
+            chartEl.innerHTML = `
+                <div class="tradingview-widget">
+                    <iframe src="https://s.tradingview.com/widgetembed/?symbol=${{tvSymbol}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
+                        style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
+                </div>`;
+        }} else {{
+            chartEl.style.display = 'none';
+            chartEl.innerHTML = '';
+        }}
+    }}
+
+    function selectWatchSymbol(symbol) {{
+        activeWatchSymbol = (activeWatchSymbol === symbol) ? null : symbol;
+        renderWatchlist();
     }}
 
     function renderTrades() {{
@@ -630,18 +658,44 @@ class DashboardGenerator:
             </table>`;
     }}
 
-    function renderEquityChart() {{
+    function getEquityDataForRange(range) {{
         const eq = DATA.equity_curve;
+        if (!eq.length) return [];
+        if (range === 'all') return eq;
+
+        const now = new Date();
+        let cutoff;
+        switch(range) {{
+            case '1d': cutoff = new Date(now - 24*60*60*1000); break;
+            case '1m': cutoff = new Date(now.getFullYear(), now.getMonth()-1, now.getDate()); break;
+            case '3m': cutoff = new Date(now.getFullYear(), now.getMonth()-3, now.getDate()); break;
+            case '1y': cutoff = new Date(now.getFullYear()-1, now.getMonth(), now.getDate()); break;
+            default:   return eq;
+        }}
+        return eq.filter(d => new Date(d.date) >= cutoff);
+    }}
+
+    function setEquityRange(range) {{
+        currentEquityRange = range;
+        // Update toggle buttons
+        document.querySelectorAll('#equity-range-toggle .toggle-btn').forEach(b => {{
+            b.classList.toggle('active', b.dataset.range === range);
+        }});
+        renderEquityChart();
+    }}
+
+    function renderEquityChart() {{
+        const eq = getEquityDataForRange(currentEquityRange);
         if (!eq.length) {{
             document.getElementById('no-equity').style.display = 'block';
             return;
         }}
         document.getElementById('no-equity').style.display = 'none';
 
-        // Thin out data if too many points for readability
+        // Thin out data if too many points
         let chartData = eq;
-        if (eq.length > 300) {{
-            const step = Math.ceil(eq.length / 300);
+        if (eq.length > 400) {{
+            const step = Math.ceil(eq.length / 400);
             chartData = eq.filter((_, i) => i % step === 0 || i === eq.length - 1);
         }}
 
@@ -902,54 +956,62 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
 /* Chart */
 .chart-container { height: 350px; position: relative; }
+.chart-container.chart-lg { height: 400px; }
+
+/* Toggle groups */
+.toggle-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.toggle-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.toggle-btn:hover { border-color: #667eea; color: #c9d1d9; }
+.toggle-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
 
 /* Watchlist */
-.watchlist-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+.watch-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
     gap: 16px;
 }
-.watch-card {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 16px;
-    transition: border-color 0.2s;
-}
-.watch-card:hover { border-color: #667eea; }
-.watch-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
+.watch-info-row:hover { border-color: #667eea; background: rgba(102,126,234,0.04); }
+.watch-info-row.active { border-color: #667eea; background: rgba(102,126,234,0.08); }
+.watch-info-left { min-width: 120px; }
+.watch-info-mid { display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+.watch-detail-inline { color: #8b949e; font-size: 0.82em; }
+.watch-links { display: flex; gap: 6px; }
 .watch-links a {
     color: #667eea;
     text-decoration: none;
-    font-size: 0.85em;
+    font-size: 0.82em;
     font-weight: 600;
-    margin-left: 10px;
-    padding: 2px 8px;
+    padding: 3px 10px;
     border: 1px solid #30363d;
     border-radius: 4px;
     transition: all 0.2s;
 }
 .watch-links a:hover { background: #667eea; color: #fff; border-color: #667eea; }
 .watch-price {
-    font-size: 1.4em;
+    font-size: 1.1em;
     font-weight: 700;
-    margin-bottom: 4px;
-}
-.watch-details {
-    display: flex;
-    gap: 16px;
-    font-size: 0.82em;
-    color: #8b949e;
-    margin-top: 4px;
 }
 .tradingview-widget {
-    margin-top: 10px;
-    border-radius: 6px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+    border-radius: 8px;
     overflow: hidden;
     border: 1px solid #21262d;
 }
