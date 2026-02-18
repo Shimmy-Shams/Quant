@@ -105,6 +105,39 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                     post_change = post_price - prev_close
                     post_change_pct = (post_change / prev_close) * 100 if prev_close else 0
 
+                # Fallback: derive extended-hours prices from bar data
+                # Yahoo's postMarketPrice/preMarketPrice fields are often
+                # missing during the actual session; the bars (prepost=True)
+                # are more reliable.
+                if not hist.empty:
+                    last_bar_close = float(hist['Close'].dropna().iloc[-1]) if not hist['Close'].dropna().empty else None
+                    last_bar_time = hist.index[-1]
+                    # Get the bar hour in ET for session detection
+                    try:
+                        import pytz
+                        et_tz = pytz.timezone('US/Eastern')
+                        if last_bar_time.tzinfo is None:
+                            bar_et = et_tz.localize(last_bar_time)
+                        else:
+                            bar_et = last_bar_time.astimezone(et_tz)
+                        bar_minutes = bar_et.hour * 60 + bar_et.minute
+                    except Exception:
+                        bar_minutes = None
+
+                    if last_bar_close and bar_minutes is not None:
+                        # Post-market bar (>= 16:00 ET) and no postPrice yet
+                        if not post_price and bar_minutes >= 960:
+                            post_price = last_bar_close
+                            if prev_close:
+                                post_change = post_price - prev_close
+                                post_change_pct = (post_change / prev_close) * 100
+                        # Pre-market bar (4:00–9:29 AM ET) and no prePrice yet
+                        if not pre_price and 240 <= bar_minutes < 570:
+                            pre_price = last_bar_close
+                            if prev_close:
+                                pre_change = pre_price - prev_close
+                                pre_change_pct = (pre_change / prev_close) * 100
+
                 quotes[orig_sym] = {
                     "price": round(price, 4),
                     "change": round(change, 4),
@@ -547,16 +580,50 @@ class DashboardGenerator:
                 const vols   = result.indicators?.quote?.[0]?.volume || [];
                 const validHighs = highs.filter(v => v != null);
                 const validLows  = lows.filter(v => v != null);
+                const validCloses = closes.filter(v => v != null);
                 const totalVol   = vols.reduce((a,b) => a + (b||0), 0);
+
+                // Derive extended-hours prices from bar data when
+                // meta.postMarketPrice / meta.preMarketPrice are missing.
+                // The v8 chart with includePrePost=true has bars for
+                // 4 AM – 8 PM ET, so the last bar close reflects the
+                // actual latest price during extended sessions.
+                let postPrice  = meta.postMarketPrice || null;
+                let prePrice   = meta.preMarketPrice  || null;
+                const timestamps = result.timestamp || [];
+                const latestClose = validCloses.length > 0 ? validCloses[validCloses.length - 1] : null;
+
+                if (timestamps.length > 0 && latestClose != null) {{
+                    const lastTs   = timestamps[timestamps.length - 1] * 1000;
+                    const lastBar  = new Date(lastTs);
+                    const etStr    = lastBar.toLocaleString('en-US', {{ timeZone: 'America/New_York' }});
+                    const lastET   = new Date(etStr);
+                    const barMins  = lastET.getHours() * 60 + lastET.getMinutes();
+
+                    // Post-market bar (>= 16:00 ET) — use last bar close
+                    if (!postPrice && barMins >= 960) {{
+                        postPrice = latestClose;
+                    }}
+                    // Pre-market bar (4:00–9:29 AM ET) — use last bar close
+                    if (!prePrice && barMins >= 240 && barMins < 570) {{
+                        prePrice = latestClose;
+                    }}
+                }}
+
+                const postChange    = postPrice ? postPrice - prevClose : null;
+                const postChangePct = (postPrice && prevClose) ? ((postPrice - prevClose) / prevClose) * 100 : null;
+                const preChange     = prePrice  ? prePrice  - prevClose : null;
+                const preChangePct  = (prePrice  && prevClose) ? ((prePrice  - prevClose) / prevClose) * 100 : null;
+
                 return {{
                     price, change, changePct,
                     marketState:   meta.marketState || 'UNKNOWN',
-                    prePrice:      meta.preMarketPrice || null,
-                    preChange:     meta.preMarketPrice ? meta.preMarketPrice - prevClose : null,
-                    preChangePct:  meta.preMarketPrice && prevClose ? ((meta.preMarketPrice - prevClose)/prevClose)*100 : null,
-                    postPrice:     meta.postMarketPrice || null,
-                    postChange:    meta.postMarketPrice ? meta.postMarketPrice - prevClose : null,
-                    postChangePct: meta.postMarketPrice && prevClose ? ((meta.postMarketPrice - prevClose)/prevClose)*100 : null,
+                    prePrice,
+                    preChange,
+                    preChangePct,
+                    postPrice,
+                    postChange,
+                    postChangePct,
                     name:          meta.shortName || meta.symbol || yahooSym,
                     dayHigh:       validHighs.length ? Math.max(...validHighs) : null,
                     dayLow:        validLows.length  ? Math.min(...validLows) : null,
