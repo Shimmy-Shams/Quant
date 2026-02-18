@@ -316,7 +316,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
     <script>
     // ── Embedded server-side data ─────────────────────────────────────────
-    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "server_quotes": {}, "generated_utc": "2026-02-18 09:47:54"};
+    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "server_quotes": {"ETHUSD": {"price": 2016.7174, "change": 24.1887, "changePct": 1.214, "previousClose": 1992.5287, "dayHigh": 2035.6812, "dayLow": 1969.0754, "volume": 6258825216, "name": "Ethereum USD", "marketState": "REGULAR", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": null, "postChange": null, "postChangePct": null}}, "generated_utc": "2026-02-18 09:57:54"};
 
     // ── Configuration ─────────────────────────────────────────────────────
     const REFRESH_INTERVAL = 5;           // seconds between price refreshes
@@ -466,10 +466,26 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
     function effectivePrice(symbol, quote) {
         if (!quote) return null;
-        const state = quote.marketState;
-        if (state === 'POST' && quote.postPrice) return quote.postPrice;
-        if (state === 'PRE'  && quote.prePrice)  return quote.prePrice;
+        const state = (quote.marketState || '').toUpperCase();
+        // Post-market states: POST, POSTPOST, CLOSED
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return quote.postPrice;
+        // Pre-market states: PRE, PREPRE
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return quote.prePrice;
         return quote.price;
+    }
+
+    function priceLabel(quote) {
+        if (!quote) return '';
+        const state = (quote.marketState || '').toUpperCase();
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return 'AH';
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return 'PM';
+        if (state === 'REGULAR')
+            return 'LIVE';
+        return '';
     }
 
     function renderPositions() {
@@ -509,12 +525,17 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             // After-hours / pre-market badge
             let ahBadge = '';
             if (q) {
-                const state = q.marketState;
-                if (state === 'POST' && q.postPrice) {
-                    ahBadge = `<div class="ah-badge">AH $$${fmt(q.postPrice)} <span class="${cls(q.postChangePct)}">${fmtP(q.postChangePct)}</span></div>`;
-                } else if (state === 'PRE' && q.prePrice) {
-                    ahBadge = `<div class="ah-badge">PM $$${fmt(q.prePrice)} <span class="${cls(q.preChangePct)}">${fmtP(q.preChangePct)}</span></div>`;
-                } else if (state === 'REGULAR') {
+                const pLabel = priceLabel(q);
+                const state = (q.marketState || '').toUpperCase();
+                if (pLabel === 'AH') {
+                    const chg = q.postPrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">AH <span class="${cls(chg)}">${fmtP(chgPct)}</span></div>`;
+                } else if (pLabel === 'PM') {
+                    const chg = q.prePrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">PM <span class="${cls(chg)}">${fmtP(chgPct)}</span></div>`;
+                } else if (pLabel === 'LIVE') {
                     ahBadge = `<div class="ah-badge live-dot">LIVE</div>`;
                 }
             }

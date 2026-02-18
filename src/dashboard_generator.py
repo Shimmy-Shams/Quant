@@ -30,39 +30,46 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
     
     Includes pre-market / post-market prices and marketState so the
     client-side effectivePrice() can pick the right number.
+    Each symbol is fetched independently with retry for reliability.
     """
     if not symbols:
         return {}
     try:
         import yfinance as yf
-        # Convert symbols for Yahoo: ETHUSD -> ETH-USD
-        yahoo_map = {}
-        for s in symbols:
-            if s.endswith('USD') and len(s) <= 7 and '-' not in s:
-                yahoo_map[s] = s[:-3] + '-USD'
-            else:
-                yahoo_map[s] = s
+    except ImportError:
+        print("  yfinance fetch failed: No module named 'yfinance'")
+        return {}
 
-        tickers = yf.Tickers(' '.join(yahoo_map.values()))
-        quotes = {}
-        for orig_sym, y_sym in yahoo_map.items():
+    # Convert symbols for Yahoo: ETHUSD -> ETH-USD
+    yahoo_map = {}
+    for s in symbols:
+        if s.endswith('USD') and len(s) <= 7 and '-' not in s:
+            yahoo_map[s] = s[:-3] + '-USD'
+        else:
+            yahoo_map[s] = s
+
+    quotes = {}
+    for orig_sym, y_sym in yahoo_map.items():
+        for attempt in range(2):  # retry once on failure
             try:
-                t = tickers.tickers.get(y_sym)
-                if not t:
-                    continue
+                t = yf.Ticker(y_sym)
                 info = t.fast_info
-                # Use full info dict for pre/post market data
-                try:
-                    full_info = t.info
-                except Exception:
-                    full_info = {}
-                hist = t.history(period='1d', interval='1m', prepost=True)
                 price = float(info.last_price) if hasattr(info, 'last_price') else None
                 prev_close = float(info.previous_close) if hasattr(info, 'previous_close') else None
+
+                # Full info for pre/post market (may be slow, wrap carefully)
+                full_info = {}
+                try:
+                    full_info = t.info or {}
+                except Exception:
+                    pass
+
+                hist = t.history(period='1d', interval='1m', prepost=True)
                 if price is None and not hist.empty:
                     price = float(hist['Close'].iloc[-1])
                 if price is None:
                     continue
+
                 change = (price - prev_close) if prev_close else 0
                 change_pct = (change / prev_close * 100) if prev_close else 0
                 day_high = float(hist['High'].max()) if not hist.empty else None
@@ -71,21 +78,32 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
 
                 # Extract market state and extended-hours prices
                 market_state = full_info.get('marketState', 'UNKNOWN')
-                # Map yfinance states to our convention
-                if market_state in ('POSTPOST', 'CLOSED'):
+                ms_upper = market_state.upper() if market_state else 'UNKNOWN'
+                if ms_upper in ('POSTPOST', 'CLOSED'):
                     market_state = 'POST'
+                elif ms_upper == 'PREPRE':
+                    market_state = 'PRE'
+                else:
+                    market_state = ms_upper
 
                 pre_price = full_info.get('preMarketPrice')
                 pre_change = full_info.get('preMarketChange')
                 pre_change_pct = full_info.get('preMarketChangePercent')
-                if pre_change_pct:
-                    pre_change_pct = pre_change_pct * 100  # yfinance returns as decimal
+                if pre_change_pct is not None:
+                    pre_change_pct = pre_change_pct * 100
+                # Sanity: recompute if % looks wrong
+                if pre_price and prev_close and pre_change_pct is not None and abs(pre_change_pct) > 50:
+                    pre_change = pre_price - prev_close
+                    pre_change_pct = (pre_change / prev_close) * 100 if prev_close else 0
 
                 post_price = full_info.get('postMarketPrice')
                 post_change = full_info.get('postMarketChange')
                 post_change_pct = full_info.get('postMarketChangePercent')
-                if post_change_pct:
+                if post_change_pct is not None:
                     post_change_pct = post_change_pct * 100
+                if post_price and prev_close and post_change_pct is not None and abs(post_change_pct) > 50:
+                    post_change = post_price - prev_close
+                    post_change_pct = (post_change / prev_close) * 100 if prev_close else 0
 
                 quotes[orig_sym] = {
                     "price": round(price, 4),
@@ -104,12 +122,12 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                     "postChange": round(post_change, 4) if post_change else None,
                     "postChangePct": round(post_change_pct, 4) if post_change_pct else None,
                 }
+                break  # success, no retry needed
             except Exception as e:
+                if attempt == 0:
+                    continue  # retry silently
                 print(f"  yfinance error for {orig_sym}: {e}")
-        return quotes
-    except Exception as e:
-        print(f"  yfinance fetch failed: {e}")
-        return {}
+    return quotes
 
 
 class DashboardGenerator:
@@ -575,10 +593,26 @@ class DashboardGenerator:
 
     function effectivePrice(symbol, quote) {{
         if (!quote) return null;
-        const state = quote.marketState;
-        if (state === 'POST' && quote.postPrice) return quote.postPrice;
-        if (state === 'PRE'  && quote.prePrice)  return quote.prePrice;
+        const state = (quote.marketState || '').toUpperCase();
+        // Post-market states: POST, POSTPOST, CLOSED
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return quote.postPrice;
+        // Pre-market states: PRE, PREPRE
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return quote.prePrice;
         return quote.price;
+    }}
+
+    function priceLabel(quote) {{
+        if (!quote) return '';
+        const state = (quote.marketState || '').toUpperCase();
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return 'AH';
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return 'PM';
+        if (state === 'REGULAR')
+            return 'LIVE';
+        return '';
     }}
 
     function renderPositions() {{
@@ -618,12 +652,17 @@ class DashboardGenerator:
             // After-hours / pre-market badge
             let ahBadge = '';
             if (q) {{
-                const state = q.marketState;
-                if (state === 'POST' && q.postPrice) {{
-                    ahBadge = `<div class="ah-badge">AH $$${{fmt(q.postPrice)}} <span class="${{cls(q.postChangePct)}}">${{fmtP(q.postChangePct)}}</span></div>`;
-                }} else if (state === 'PRE' && q.prePrice) {{
-                    ahBadge = `<div class="ah-badge">PM $$${{fmt(q.prePrice)}} <span class="${{cls(q.preChangePct)}}">${{fmtP(q.preChangePct)}}</span></div>`;
-                }} else if (state === 'REGULAR') {{
+                const pLabel = priceLabel(q);
+                const state = (q.marketState || '').toUpperCase();
+                if (pLabel === 'AH') {{
+                    const chg = q.postPrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">AH <span class="${{cls(chg)}}">${{fmtP(chgPct)}}</span></div>`;
+                }} else if (pLabel === 'PM') {{
+                    const chg = q.prePrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">PM <span class="${{cls(chg)}}">${{fmtP(chgPct)}}</span></div>`;
+                }} else if (pLabel === 'LIVE') {{
                     ahBadge = `<div class="ah-badge live-dot">LIVE</div>`;
                 }}
             }}
