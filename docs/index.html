@@ -316,7 +316,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
     <script>
     // ── Embedded server-side data ─────────────────────────────────────────
-    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "server_quotes": {}, "generated_utc": "2026-02-18 09:41:15"};
+    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "server_quotes": {}, "generated_utc": "2026-02-18 09:47:54"};
 
     // ── Configuration ─────────────────────────────────────────────────────
     const REFRESH_INTERVAL = 5;           // seconds between price refreshes
@@ -330,6 +330,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
     let liveQuotes = DATA.server_quotes || {};  // seed with server-side quotes
     let equityChart = null;
     let activeWatchSymbol = null;
+    let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
     let currentEquityRange = 'all';
     let fetchCount = 0;
     let lastPrices = {};  // track previous prices for flash animation
@@ -607,19 +608,27 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         }).join('');
         document.getElementById('watchlist-info').innerHTML = infoCards;
 
-        // Render chart for selected symbol only
+        // Render chart ONLY if selected symbol actually changed (avoid iframe reload)
+        updateWatchlistChart();
+    }
+
+    function updateWatchlistChart() {
         const chartEl = document.getElementById('watchlist-chart');
         if (activeWatchSymbol) {
-            const tvSymbol = toTvSymbol(activeWatchSymbol);
-            chartEl.style.display = 'block';
-            chartEl.innerHTML = `
-                <div class="tradingview-widget">
-                    <iframe src="https://s.tradingview.com/widgetembed/?symbol=${tvSymbol}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
-                        style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
-                </div>`;
+            if (renderedChartSymbol !== activeWatchSymbol) {
+                const tvSymbol = toTvSymbol(activeWatchSymbol);
+                chartEl.style.display = 'block';
+                chartEl.innerHTML = `
+                    <div class="tradingview-widget">
+                        <iframe src="https://s.tradingview.com/widgetembed/?symbol=${tvSymbol}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
+                            style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
+                    </div>`;
+                renderedChartSymbol = activeWatchSymbol;
+            }
         } else {
             chartEl.style.display = 'none';
             chartEl.innerHTML = '';
+            renderedChartSymbol = null;
         }
     }
 

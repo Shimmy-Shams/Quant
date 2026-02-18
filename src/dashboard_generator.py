@@ -26,7 +26,11 @@ import numpy as np
 
 
 def _fetch_server_quotes(symbols: List[str]) -> Dict:
-    """Fetch current quotes server-side via yfinance (no CORS needed)."""
+    """Fetch current quotes server-side via yfinance (no CORS needed).
+    
+    Includes pre-market / post-market prices and marketState so the
+    client-side effectivePrice() can pick the right number.
+    """
     if not symbols:
         return {}
     try:
@@ -47,6 +51,11 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                 if not t:
                     continue
                 info = t.fast_info
+                # Use full info dict for pre/post market data
+                try:
+                    full_info = t.info
+                except Exception:
+                    full_info = {}
                 hist = t.history(period='1d', interval='1m', prepost=True)
                 price = float(info.last_price) if hasattr(info, 'last_price') else None
                 prev_close = float(info.previous_close) if hasattr(info, 'previous_close') else None
@@ -59,6 +68,25 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                 day_high = float(hist['High'].max()) if not hist.empty else None
                 day_low = float(hist['Low'].min()) if not hist.empty else None
                 volume = int(hist['Volume'].sum()) if not hist.empty else None
+
+                # Extract market state and extended-hours prices
+                market_state = full_info.get('marketState', 'UNKNOWN')
+                # Map yfinance states to our convention
+                if market_state in ('POSTPOST', 'CLOSED'):
+                    market_state = 'POST'
+
+                pre_price = full_info.get('preMarketPrice')
+                pre_change = full_info.get('preMarketChange')
+                pre_change_pct = full_info.get('preMarketChangePercent')
+                if pre_change_pct:
+                    pre_change_pct = pre_change_pct * 100  # yfinance returns as decimal
+
+                post_price = full_info.get('postMarketPrice')
+                post_change = full_info.get('postMarketChange')
+                post_change_pct = full_info.get('postMarketChangePercent')
+                if post_change_pct:
+                    post_change_pct = post_change_pct * 100
+
                 quotes[orig_sym] = {
                     "price": round(price, 4),
                     "change": round(change, 4),
@@ -67,7 +95,14 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                     "dayHigh": round(day_high, 4) if day_high else None,
                     "dayLow": round(day_low, 4) if day_low else None,
                     "volume": volume,
-                    "name": y_sym,
+                    "name": full_info.get('shortName') or y_sym,
+                    "marketState": market_state,
+                    "prePrice": round(pre_price, 4) if pre_price else None,
+                    "preChange": round(pre_change, 4) if pre_change else None,
+                    "preChangePct": round(pre_change_pct, 4) if pre_change_pct else None,
+                    "postPrice": round(post_price, 4) if post_price else None,
+                    "postChange": round(post_change, 4) if post_change else None,
+                    "postChangePct": round(post_change_pct, 4) if post_change_pct else None,
                 }
             except Exception as e:
                 print(f"  yfinance error for {orig_sym}: {e}")
@@ -404,6 +439,7 @@ class DashboardGenerator:
     let liveQuotes = DATA.server_quotes || {{}};  // seed with server-side quotes
     let equityChart = null;
     let activeWatchSymbol = null;
+    let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
     let currentEquityRange = 'all';
     let fetchCount = 0;
     let lastPrices = {{}};  // track previous prices for flash animation
@@ -681,19 +717,27 @@ class DashboardGenerator:
         }}).join('');
         document.getElementById('watchlist-info').innerHTML = infoCards;
 
-        // Render chart for selected symbol only
+        // Render chart ONLY if selected symbol actually changed (avoid iframe reload)
+        updateWatchlistChart();
+    }}
+
+    function updateWatchlistChart() {{
         const chartEl = document.getElementById('watchlist-chart');
         if (activeWatchSymbol) {{
-            const tvSymbol = toTvSymbol(activeWatchSymbol);
-            chartEl.style.display = 'block';
-            chartEl.innerHTML = `
-                <div class="tradingview-widget">
-                    <iframe src="https://s.tradingview.com/widgetembed/?symbol=${{tvSymbol}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
-                        style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
-                </div>`;
+            if (renderedChartSymbol !== activeWatchSymbol) {{
+                const tvSymbol = toTvSymbol(activeWatchSymbol);
+                chartEl.style.display = 'block';
+                chartEl.innerHTML = `
+                    <div class="tradingview-widget">
+                        <iframe src="https://s.tradingview.com/widgetembed/?symbol=${{tvSymbol}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
+                            style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
+                    </div>`;
+                renderedChartSymbol = activeWatchSymbol;
+            }}
         }} else {{
             chartEl.style.display = 'none';
             chartEl.innerHTML = '';
+            renderedChartSymbol = null;
         }}
     }}
 
