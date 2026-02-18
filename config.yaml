@@ -114,7 +114,7 @@ backtest:
   # Position Sizing
   # Options: equal_weight, signal_proportional, volatility_scaled, kelly
   position_size_method: "volatility_scaled"
-  max_position_size: 0.1    # Max 10% of capital per position
+  max_position_size: 0.15   # Max 15% of capital per position (Config F: was 0.10)
   max_total_exposure: 1.0   # Max 100% total exposure
 
   # Signal-proportional sizing params
@@ -127,7 +127,7 @@ backtest:
     target_volatility: 0.15   # Annualized target vol per position (15%)
     vol_lookback: 60          # Days for realized vol estimation
     min_size: 0.02            # Minimum position size (2% of equity)
-    max_size: 0.10            # Maximum position size (10% of equity)
+    max_size: 0.15            # Maximum position size (15% of equity, Config F: was 0.10)
 
   # Kelly criterion params
   kelly:
@@ -139,7 +139,7 @@ backtest:
 
   # Entry/Exit Thresholds
   # PHASE B.1: Threshold for gated mode (signal magnitude = 1 + boost * |zscore|)
-  entry_threshold: 1.43     # Enter when |signal| > threshold (optimizer median across 34 WF periods)
+  entry_threshold: 1.0      # Enter when |signal| > threshold (Config F: was 1.43, deep dive optimal)
   exit_threshold: 0.50       # Exit when |signal| < threshold (optimizer median ~0.42, conservative 0.50)
 
   # Risk Management
@@ -147,7 +147,7 @@ backtest:
   stop_loss_pct: 0.10        # Stop loss (optimizer numeric median 0.10; kept for risk mgmt)
   short_stop_loss_pct: 0.10  # Short-specific stop loss (overrides stop_loss_pct for shorts)
   take_profit_pct: 0.15      # Take profit (null = disabled, 0.25 = 25%)
-  max_holding_days: 20       # Max holding period in days (optimizer consensus: 10-20 range)
+  max_holding_days: 5        # Max holding period in days (Config F: was 20, deep dive optimal)
 
   # Short Acceleration Filter (blocks short entries on surging stocks)
   short_accel_filter:
