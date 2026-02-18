@@ -76,7 +76,7 @@
 <body>
     <div class="container">
         <h1>📈 Quant Trading Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-18 05:35:15 UTC</div>
+        <div class="timestamp">Last Updated: 2026-02-18 06:15:06 UTC</div>
         
         <div class="metrics-grid">
             <div class="metric-card">
@@ -99,11 +99,11 @@
             </div>
             <div class="metric-card">
                 <div class="metric-label">Sharpe Ratio</div>
-                <div class="metric-value">-7.94</div>
+                <div class="metric-value">0.00</div>
             </div>
             <div class="metric-card">
                 <div class="metric-label">Max Drawdown</div>
-                <div class="metric-value negative">0.03%</div>
+                <div class="metric-value negative">0.00%</div>
             </div>
         </div>
         
@@ -129,8 +129,8 @@
     
     <script>
         // Data
-        const equityData = [{"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 100000.0, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}, {"date": "2026-02-13", "equity": 99965.38017, "daily_return": 0.0}];
-        const positionsData = [{"symbol": "CRWD", "side": "long", "qty": 232, "entry_price": 413.960733, "current_price": 411.43, "pnl": -587.130056, "pnl_pct": -0.611, "entry_date": "N/A", "signal": 0.0}, {"symbol": "ETHUSD", "side": "short", "qty": 0, "entry_price": 1989.4, "current_price": 1997.995, "pnl": 0.105643, "pnl_pct": 0.432, "entry_date": "N/A", "signal": 0.0}];
+        const equityData = [];
+        const positionsData = [{"symbol": "CRWD", "side": "long", "qty": 232, "entry_price": 413.960733, "current_price": 411.43, "pnl": -587.130056, "pnl_pct": -0.611, "entry_date": "N/A", "signal": 0.0}, {"symbol": "ETHUSD", "side": "short", "qty": 0, "entry_price": 1989.4, "current_price": 1997.9, "pnl": 0.104475, "pnl_pct": 0.42700000000000005, "entry_date": "N/A", "signal": 0.0}];
         const tradesData = [{"symbol": "CRWD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 413.960733, "exit_price": 413.960733, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "ETH/USD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 1989.4, "exit_price": 1989.4, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "BTC/USD", "side": "sell", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 68441.72, "exit_price": 68441.72, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "BTC/USD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 68504.9, "exit_price": 68504.9, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}];
         
         // Render positions table
