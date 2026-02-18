@@ -68,6 +68,8 @@ class AlpacaExecutor:
         commission_pct: float = 0.0,  # Alpaca is commission-free
         max_position_pct: float = 0.10,
         max_total_exposure: float = 1.0,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
     ):
         """
         Args:
@@ -75,11 +77,15 @@ class AlpacaExecutor:
             commission_pct: Commission rate (0 for Alpaca)
             max_position_pct: Max % of portfolio per position
             max_total_exposure: Max % of portfolio in positions
+            stop_loss_pct: If set, attach server-side stop-loss via bracket order
+            take_profit_pct: If set, attach server-side take-profit via bracket order
         """
         self.connection = connection
         self.commission_pct = commission_pct
         self.max_position_pct = max_position_pct
         self.max_total_exposure = max_total_exposure
+        self.stop_loss_pct = stop_loss_pct
+        self.take_profit_pct = take_profit_pct
 
     def execute_decisions(
         self,
@@ -139,7 +145,7 @@ class AlpacaExecutor:
         decision: TradeDecision,
         current_prices: pd.Series,
     ) -> TradeResult:
-        """Execute a single trade decision"""
+        """Execute a single trade decision, optionally with bracket (SL/TP) legs."""
         try:
             if decision.target_qty <= 0:
                 return TradeResult(
@@ -149,14 +155,40 @@ class AlpacaExecutor:
                     error_message='Zero or negative quantity',
                 )
 
-            order = self.connection.submit_market_order(
-                symbol=decision.symbol,
-                qty=decision.target_qty,
-                side=decision.side,
-            )
+            price = current_prices.get(decision.symbol, 0)
+
+            # ── Use bracket order for entries when SL is configured ──
+            is_entry = decision.action in ('buy', 'short')
+            use_bracket = is_entry and self.stop_loss_pct is not None and price > 0
+
+            if use_bracket:
+                from execution.intraday_monitor import IntradayMonitor  # lazy to avoid circular import
+                direction = 'long' if decision.action == 'buy' else 'short'
+                bracket = IntradayMonitor.compute_bracket_prices(
+                    entry_price=price,
+                    side=direction,
+                    stop_loss_pct=self.stop_loss_pct,
+                    take_profit_pct=self.take_profit_pct,
+                )
+                sl_price = bracket['stop_loss_price']
+                tp_price = bracket['take_profit_price']
+                order = self.connection.submit_bracket_order(
+                    symbol=decision.symbol,
+                    qty=decision.target_qty,
+                    side=decision.side,
+                    stop_loss_price=sl_price,
+                    take_profit_price=tp_price,
+                )
+                tp_str = f"TP=${tp_price:.2f}" if tp_price else "no TP"
+                logger.info(f"Bracket order {decision.symbol}: SL=${sl_price:.2f} {tp_str}")
+            else:
+                order = self.connection.submit_market_order(
+                    symbol=decision.symbol,
+                    qty=decision.target_qty,
+                    side=decision.side,
+                )
 
             # Estimate commission
-            price = current_prices.get(decision.symbol, 0)
             commission = price * decision.target_qty * self.commission_pct
 
             return TradeResult(

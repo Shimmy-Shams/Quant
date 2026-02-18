@@ -49,6 +49,7 @@ from connection.alpaca_connection import AlpacaConfig, AlpacaConnection, Trading
 from data.alpaca_data import AlpacaDataAdapter
 from execution.alpaca_executor import AlpacaExecutor
 from execution.simulation import SimulationEngine
+from execution.intraday_monitor import IntradayMonitor, IntradayMonitorConfig
 from dashboard_generator import DashboardGenerator
 
 
@@ -742,7 +743,8 @@ def main():
     )
 
     # ── Universe ──
-    universe = select_universe(config, max_symbols=30)
+    max_symbols = config.get('alpaca.max_universe_size', 60)
+    universe = select_universe(config, max_symbols=max_symbols)
     logger.info(f"Universe: {len(universe)} symbols → {', '.join(universe[:10])}...")
 
     # ── Build executor / simulation engine ──
@@ -751,6 +753,8 @@ def main():
         commission_pct=0.0 if mode == TradingMode.LIVE else bt_config.commission_pct,
         max_position_pct=bt_config.max_position_size,
         max_total_exposure=bt_config.max_total_exposure,
+        stop_loss_pct=bt_config.stop_loss_pct,
+        take_profit_pct=bt_config.take_profit_pct,
     )
 
     shadow_sim = None
@@ -763,12 +767,36 @@ def main():
         )
         _restore_shadow_state(shadow_sim)
 
+    # ── Intraday monitor ──
+    monitor = None
+    intraday_cfg_dict = config.get('backtest.intraday_monitor', {})
+    intraday_enabled = bool(intraday_cfg_dict.get('enabled', False)) if intraday_cfg_dict else False
+    if intraday_enabled:
+        monitor_config = IntradayMonitorConfig.from_dict(intraday_cfg_dict)
+        monitor = IntradayMonitor(
+            connection=conn,
+            config=monitor_config,
+            shadow_sim=shadow_sim,
+            shutdown_flag=lambda: SHUTDOWN_REQUESTED,
+        )
+        logger.info(
+            f"Intraday monitor enabled | poll={monitor_config.poll_interval_sec}s "
+            f"| window={monitor_config.start_time_et}-{monitor_config.stop_time_et} ET"
+        )
+
     # ── Main loop ──
     cycle_count = 0
     last_trade_date = None
 
     while not SHUTDOWN_REQUESTED:
         try:
+            # ── Intraday monitoring (runs before daily signal window) ──
+            if monitor is not None and args.interval == 0 and not args.once:
+                monitor.reset_session()
+                monitor.run()  # Blocks until stop_time_et or shutdown
+                if SHUTDOWN_REQUESTED:
+                    break
+
             # Wait for execution window (unless running on interval/once)
             if args.interval == 0 and not args.once:
                 wait_for_execution_window(interval_sec=3600)

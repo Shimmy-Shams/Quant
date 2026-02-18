@@ -167,6 +167,25 @@ backtest:
     check_after_days: 10            # Check after N days in trade
     flat_threshold: 0.01            # Exit if |pnl| < 1% after check_after_days
 
+  # Intraday Monitor (P1 - polls positions for exits between signal windows)
+  intraday_monitor:
+    enabled: true
+    poll_interval_sec: 300          # Check every 5 minutes
+    start_time_et: "09:45"          # Start monitoring after market open
+    stop_time_et: "15:50"           # Stop before daily signal cycle (3:55 PM)
+
+    # Trailing stop (intraday)
+    trailing_stop_pct: 0.05         # Trail 5% from intraday peak
+    trailing_activation_pct: 0.02   # Activate after 2% unrealized profit
+
+    # Time decay (intraday)
+    time_decay_days: 10             # Check positions held > N days
+    time_decay_threshold: 0.01      # Exit if |pnl| < 1% after N days
+
+    # Circuit breaker (portfolio-level kill switch)
+    circuit_breaker_pct: 0.08       # Close all if portfolio DD > 8% from peak
+    circuit_breaker_cooldown_min: 60  # Minutes to wait before re-entering after trip
+
   # Regime Filter
   use_regime_filter: true
   min_regime_multiplier: 0.5  # Don't trade if regime < this value
@@ -260,7 +279,7 @@ alpaca:
   lookback_days: 504            # Days of history for signal warmup
 
   # Universe selection (free tier: max 30 symbols)
-  max_universe_size: 30
+  max_universe_size: 60
   universe_source: "hurst"      # 'hurst' (rank by H exponent) or 'manual'
   manual_symbols: []            # Override: list specific symbols here
 
@@ -268,7 +287,7 @@ alpaca:
   default_mode: "shadow"        # 'shadow', 'live', or 'replay'
 
   # Simulation (replay mode)
-  replay_years: 2               # Years of history to replay
+  replay_years: 5               # Years of history to replay
 
   # Shadow state persistence
   save_shadow_state: true

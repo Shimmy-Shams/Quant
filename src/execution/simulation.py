@@ -145,9 +145,20 @@ class SimulationEngine:
 
     @property
     def equity(self) -> float:
-        """Current total equity"""
-        positions_value = sum(p.market_value for p in self.positions.values())
-        return self.cash + positions_value
+        """
+        Current total equity.
+
+        Longs are assets (add to equity), shorts are liabilities (subtract).
+        When you short-sell, cash increases by the proceeds but you owe shares
+        back — the current market value of those shares is a liability.
+        """
+        longs_value = sum(
+            p.market_value for p in self.positions.values() if p.side == 'long'
+        )
+        shorts_liability = sum(
+            p.market_value for p in self.positions.values() if p.side == 'short'
+        )
+        return self.cash + longs_value - shorts_liability
 
     @property
     def positions_as_dict(self) -> Dict[str, Dict]:

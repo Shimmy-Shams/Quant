@@ -17,11 +17,12 @@ from enum import Enum
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     MarketOrderRequest, LimitOrderRequest,
-    GetOrdersRequest, ClosePositionRequest
+    GetOrdersRequest, ClosePositionRequest,
+    StopLossRequest, TakeProfitRequest,
 )
 from alpaca.trading.enums import (
     OrderSide, TimeInForce, OrderStatus, OrderType,
-    QueryOrderStatus
+    QueryOrderStatus, OrderClass,
 )
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest, CryptoBarsRequest
@@ -247,6 +248,134 @@ class AlpacaConnection:
             'submitted_at': str(order.submitted_at),
             'filled_avg_price': float(order.filled_avg_price) if order.filled_avg_price else None,
         }
+
+    def submit_bracket_order(
+        self,
+        symbol: str,
+        qty: int,
+        side: str,
+        stop_loss_price: float,
+        take_profit_price: Optional[float] = None,
+        time_in_force: str = 'gtc'
+    ) -> Dict:
+        """
+        Submit a bracket (OTO/OCO) market order with attached stop-loss
+        and optional take-profit legs.
+
+        Alpaca handles the stop/TP server-side — no polling needed for
+        these exit conditions.
+
+        Args:
+            symbol: Stock ticker
+            qty: Number of shares
+            side: 'buy' or 'sell'  (entry side)
+            stop_loss_price: Stop-loss trigger price
+            take_profit_price: Take-profit limit price (None = OTO stop only)
+            time_in_force: 'day' or 'gtc' (default: 'gtc')
+
+        Returns:
+            Order details dict with leg order IDs
+        """
+        if self.config.trading_mode != TradingMode.LIVE:
+            self.logger.info(
+                f"[{self.config.trading_mode.value.upper()}] Would submit BRACKET: "
+                f"{side.upper()} {qty} {symbol} @ MARKET | "
+                f"SL=${stop_loss_price:.2f}"
+                + (f" TP=${take_profit_price:.2f}" if take_profit_price else "")
+            )
+            return {
+                'id': f'shadow-{datetime.now().timestamp()}',
+                'symbol': symbol,
+                'qty': qty,
+                'side': side,
+                'type': 'market',
+                'order_class': 'bracket' if take_profit_price else 'oto',
+                'stop_loss_price': stop_loss_price,
+                'take_profit_price': take_profit_price,
+                'status': 'simulated',
+                'submitted_at': datetime.now().isoformat(),
+            }
+
+        # Build bracket order
+        order_side = OrderSide.BUY if side == 'buy' else OrderSide.SELL
+        tif = TimeInForce.DAY if time_in_force == 'day' else TimeInForce.GTC
+
+        stop_loss = StopLossRequest(stop_price=stop_loss_price)
+
+        order_kwargs = dict(
+            symbol=symbol,
+            qty=qty,
+            side=order_side,
+            time_in_force=tif,
+            order_class=OrderClass.BRACKET if take_profit_price else OrderClass.OTO,
+            stop_loss=stop_loss,
+        )
+
+        if take_profit_price is not None:
+            order_kwargs['take_profit'] = TakeProfitRequest(
+                limit_price=take_profit_price
+            )
+
+        order_request = MarketOrderRequest(**order_kwargs)
+        order = self.trading_client.submit_order(order_request)
+
+        self.logger.info(
+            f"Bracket order submitted: {side.upper()} {qty} {symbol} | "
+            f"SL=${stop_loss_price:.2f}"
+            + (f" TP=${take_profit_price:.2f}" if take_profit_price else "")
+            + f" → {order.status}"
+        )
+
+        result = {
+            'id': str(order.id),
+            'symbol': order.symbol,
+            'qty': float(order.qty),
+            'side': order.side.value,
+            'type': order.type.value,
+            'order_class': 'bracket' if take_profit_price else 'oto',
+            'stop_loss_price': stop_loss_price,
+            'take_profit_price': take_profit_price,
+            'status': order.status.value,
+            'submitted_at': str(order.submitted_at),
+            'filled_avg_price': float(order.filled_avg_price) if order.filled_avg_price else None,
+        }
+
+        # Capture leg order IDs if available
+        if hasattr(order, 'legs') and order.legs:
+            result['leg_ids'] = [str(leg.id) for leg in order.legs]
+
+        return result
+
+    def get_latest_trade(self, symbol: str) -> Optional[Dict]:
+        """Get the latest trade (price) for a symbol via data API."""
+        try:
+            from alpaca.data.requests import StockLatestTradeRequest
+            request = StockLatestTradeRequest(symbol_or_symbols=symbol)
+            trade = self.data_client.get_stock_latest_trade(request)
+            if symbol in trade:
+                t = trade[symbol]
+                return {'price': float(t.price), 'size': int(t.size)}
+        except Exception as e:
+            self.logger.debug(f"Latest trade lookup failed for {symbol}: {e}")
+        return None
+
+    def get_latest_trades(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Get latest trade prices for multiple symbols in a single API call.
+
+        Returns:
+            Dict mapping symbol → latest price
+        """
+        prices = {}
+        try:
+            from alpaca.data.requests import StockLatestTradeRequest
+            request = StockLatestTradeRequest(symbol_or_symbols=symbols)
+            trades = self.data_client.get_stock_latest_trade(request)
+            for sym, t in trades.items():
+                prices[sym] = float(t.price)
+        except Exception as e:
+            self.logger.warning(f"Batch latest-trade lookup failed: {e}")
+        return prices
 
     def submit_limit_order(
         self,
