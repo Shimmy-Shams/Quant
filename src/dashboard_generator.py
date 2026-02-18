@@ -25,6 +25,58 @@ import pandas as pd
 import numpy as np
 
 
+def _fetch_server_quotes(symbols: List[str]) -> Dict:
+    """Fetch current quotes server-side via yfinance (no CORS needed)."""
+    if not symbols:
+        return {}
+    try:
+        import yfinance as yf
+        # Convert symbols for Yahoo: ETHUSD -> ETH-USD
+        yahoo_map = {}
+        for s in symbols:
+            if s.endswith('USD') and len(s) <= 7 and '-' not in s:
+                yahoo_map[s] = s[:-3] + '-USD'
+            else:
+                yahoo_map[s] = s
+
+        tickers = yf.Tickers(' '.join(yahoo_map.values()))
+        quotes = {}
+        for orig_sym, y_sym in yahoo_map.items():
+            try:
+                t = tickers.tickers.get(y_sym)
+                if not t:
+                    continue
+                info = t.fast_info
+                hist = t.history(period='1d', interval='1m', prepost=True)
+                price = float(info.last_price) if hasattr(info, 'last_price') else None
+                prev_close = float(info.previous_close) if hasattr(info, 'previous_close') else None
+                if price is None and not hist.empty:
+                    price = float(hist['Close'].iloc[-1])
+                if price is None:
+                    continue
+                change = (price - prev_close) if prev_close else 0
+                change_pct = (change / prev_close * 100) if prev_close else 0
+                day_high = float(hist['High'].max()) if not hist.empty else None
+                day_low = float(hist['Low'].min()) if not hist.empty else None
+                volume = int(hist['Volume'].sum()) if not hist.empty else None
+                quotes[orig_sym] = {
+                    "price": round(price, 4),
+                    "change": round(change, 4),
+                    "changePct": round(change_pct, 4),
+                    "previousClose": round(prev_close, 4) if prev_close else None,
+                    "dayHigh": round(day_high, 4) if day_high else None,
+                    "dayLow": round(day_low, 4) if day_low else None,
+                    "volume": volume,
+                    "name": y_sym,
+                }
+            except Exception as e:
+                print(f"  yfinance error for {orig_sym}: {e}")
+        return quotes
+    except Exception as e:
+        print(f"  yfinance fetch failed: {e}")
+        return {}
+
+
 class DashboardGenerator:
     """Generate a live-updating HTML dashboard from trading data"""
 
@@ -45,7 +97,13 @@ class DashboardGenerator:
             equity_curve = self._load_equity_curve()
             metrics = self._calculate_metrics(account, equity_curve, trades)
 
-            html = self._build_html(positions, trades, account, equity_curve, metrics)
+            # Fetch live quotes server-side (reliable, no CORS)
+            symbols = [p["symbol"] for p in positions]
+            server_quotes = _fetch_server_quotes(symbols)
+            if server_quotes:
+                print(f"  Server-side quotes: {list(server_quotes.keys())}")
+
+            html = self._build_html(positions, trades, account, equity_curve, metrics, server_quotes)
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html)
@@ -235,6 +293,7 @@ class DashboardGenerator:
         account: Dict,
         equity_curve: List[Dict],
         metrics: Dict,
+        server_quotes: Optional[Dict] = None,
     ) -> str:
         """Build the self-updating HTML dashboard"""
 
@@ -244,6 +303,7 @@ class DashboardGenerator:
             "account": account,
             "equity_curve": equity_curve,
             "metrics": metrics,
+            "server_quotes": server_quotes or {},
             "generated_utc": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         })
 
@@ -341,11 +401,12 @@ class DashboardGenerator:
     ];
 
     let countdown = REFRESH_INTERVAL;
-    let liveQuotes = {{}};  // symbol -> quote data
+    let liveQuotes = DATA.server_quotes || {{}};  // seed with server-side quotes
     let equityChart = null;
     let activeWatchSymbol = null;
     let currentEquityRange = 'all';
     let fetchCount = 0;
+    let lastPrices = {{}};  // track previous prices for flash animation
 
     // ── Utilities ─────────────────────────────────────────────────────────
     const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {{minimumFractionDigits:d, maximumFractionDigits:d}});
@@ -539,7 +600,7 @@ class DashboardGenerator:
                 <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
                 <td>${{Math.abs(p.qty)}}</td>
                 <td>$$${{fmt(p.entry_price)}}</td>
-                <td>
+                <td data-sym="${{p.symbol}}">
                     $$${{fmt(curPrice)}}
                     ${{ahBadge}}
                 </td>
@@ -792,9 +853,17 @@ class DashboardGenerator:
         document.getElementById('price-status').textContent = 'Fetching live prices...';
         const quotes = await fetchLiveQuotes(symbols);
         if (Object.keys(quotes).length > 0) {{
+            // Track price changes for flash animation
+            for (const sym of Object.keys(quotes)) {{
+                if (liveQuotes[sym]) lastPrices[sym] = liveQuotes[sym].price;
+            }}
             liveQuotes = quotes;
             document.getElementById('price-status').innerHTML =
-                '<span class="live-dot">&#9679;</span> Live prices (auto-refresh every ' + REFRESH_INTERVAL + 's)';
+                '<span class="live-dot">&#9679;</span> Live prices · updated ' + new Date().toLocaleTimeString();
+        }} else if (Object.keys(liveQuotes).length > 0) {{
+            // Still have server-side quotes — show that
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot" style="color:#f0ad4e;">&#9679;</span> Server prices (snapshot) · client refresh unavailable';
         }} else {{
             document.getElementById('price-status').textContent = 'Using cached prices (live fetch unavailable)';
         }}
@@ -802,6 +871,19 @@ class DashboardGenerator:
         renderPositions();
         renderMetrics();
         renderMarketStatus();
+        renderWatchlist();
+        flashUpdatedCells();
+    }}
+
+    function flashUpdatedCells() {{
+        document.querySelectorAll('[data-sym]').forEach(el => {{
+            const sym = el.dataset.sym;
+            const q = liveQuotes[sym];
+            if (q && lastPrices[sym] !== undefined && q.price !== lastPrices[sym]) {{
+                el.classList.add('price-flash');
+                setTimeout(() => el.classList.remove('price-flash'), 1200);
+            }}
+        }});
     }}
 
     function startCountdown() {{
@@ -821,12 +903,19 @@ class DashboardGenerator:
     // ── Init ──────────────────────────────────────────────────────────────
     (async function init() {{
         updateTimestamps();
+
+        // Immediately render with server-side quotes (no wait)
+        if (Object.keys(liveQuotes).length > 0) {{
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot" style="color:#f0ad4e;">&#9679;</span> Server prices (fetching live...)';
+        }}
         renderMetrics();
         renderPositions();
         renderTrades();
         renderEquityChart();
         renderWatchlist();
 
+        // Then try upgrading to live CORS-proxied quotes
         await refreshPrices();
         startCountdown();
     }})();
@@ -965,6 +1054,13 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
 /* Price status */
 .price-status { font-size: 0.85em; color: #8b949e; }
+
+/* Price flash animation */
+@keyframes priceFlash {
+    0%   { background: rgba(102,126,234,0.3); }
+    100% { background: transparent; }
+}
+.price-flash { animation: priceFlash 1.2s ease-out; }
 
 /* Chart */
 .chart-container { height: 350px; position: relative; }
