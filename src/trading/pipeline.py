@@ -192,16 +192,24 @@ def fetch_data(
     adapter: AlpacaDataAdapter,
     universe: List[str],
     lookback_days: int = 500,
+    allow_stale_cache: bool = True,
+    min_coverage: float = 0.8,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Fetch price + volume data with caching.
 
-    Uses cache if <3 days old, otherwise fetches from Alpaca API.
+    Uses cache if <3 days old AND cache covers ≥min_coverage of the
+    requested universe. Otherwise fetches from Alpaca API.
 
     Args:
         adapter: Alpaca data adapter.
         universe: List of ticker symbols.
         lookback_days: Number of calendar days of history.
+        allow_stale_cache: If True, use cache up to 3 days old without API.
+            If False, always fetch fresh data (useful for REPLAY mode).
+            Default True for SHADOW/LIVE modes.
+        min_coverage: Minimum fraction of universe symbols that must be in
+            cache for it to be considered valid (0.0–1.0). Default 0.8.
 
     Returns:
         (price_df, volume_df, raw_bars) tuple.
@@ -209,21 +217,33 @@ def fetch_data(
     cache_dir = adapter.cache_dir
 
     # Try recent cache first (< 3 days old → skip API)
-    cache_files = list(cache_dir.glob("*.parquet")) if cache_dir.exists() else []
-    if cache_files:
-        latest_cache = max(cache_files, key=lambda p: p.stat().st_mtime)
-        age_days = (time.time() - latest_cache.stat().st_mtime) / 86400
-        if age_days <= 3:
-            logger.info(f"Cache is {age_days:.1f}d old — loading from disk")
-            cached = adapter.load_cache(universe, label="latest")
-            if cached:
-                all_prices, all_volumes = {}, {}
-                for sym, df in cached.items():
-                    if len(df) >= 100:
-                        all_prices[sym] = df["close"]
-                        all_volumes[sym] = df["volume"]
-                if all_prices:
-                    return pd.DataFrame(all_prices), pd.DataFrame(all_volumes), cached
+    if allow_stale_cache:
+        cache_files = list(cache_dir.glob("*.parquet")) if cache_dir.exists() else []
+        if cache_files:
+            latest_cache = max(cache_files, key=lambda p: p.stat().st_mtime)
+            age_days = (time.time() - latest_cache.stat().st_mtime) / 86400
+            if age_days <= 3:
+                cached = adapter.load_cache(universe, label="latest")
+                if cached:
+                    coverage = len(cached) / len(universe) if universe else 0
+                    if coverage >= min_coverage:
+                        all_prices, all_volumes = {}, {}
+                        for sym, df in cached.items():
+                            if len(df) >= 100:
+                                all_prices[sym] = df["close"]
+                                all_volumes[sym] = df["volume"]
+                        if all_prices:
+                            logger.info(
+                                f"Cache is {age_days:.1f}d old, "
+                                f"{len(cached)}/{len(universe)} symbols "
+                                f"({coverage:.0%} coverage) — loading from disk"
+                            )
+                            return pd.DataFrame(all_prices), pd.DataFrame(all_volumes), cached
+                    else:
+                        logger.info(
+                            f"Cache has only {len(cached)}/{len(universe)} symbols "
+                            f"({coverage:.0%} < {min_coverage:.0%} threshold) — fetching from API"
+                        )
 
     logger.info(f"Fetching pipeline data for {len(universe)} symbols ({lookback_days}d)...")
     price_df, volume_df, raw_bars = adapter.fetch_pipeline_data(
