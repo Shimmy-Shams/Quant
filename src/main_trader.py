@@ -621,6 +621,10 @@ def parse_args():
         "--push-dashboard", action="store_true",
         help="Auto-commit and push dashboard to GitHub"
     )
+    parser.add_argument(
+        "--update-dashboard-only", action="store_true",
+        help="Update dashboard with current Alpaca positions/prices and exit (no trading)"
+    )
     return parser.parse_args()
 
 
@@ -628,6 +632,19 @@ def main():
     global SHUTDOWN_REQUESTED
 
     args = parse_args()
+    if args.update_dashboard_only:
+        # Only update dashboard, do not run trading logic
+        log_dir = PROJECT_ROOT / "data" / "logs"
+        setup_logging(log_dir, "INFO")
+        alpaca_config = AlpacaConfig.from_env()
+        alpaca_config.trading_mode = TradingMode.LIVE
+        conn = AlpacaConnection(alpaca_config)
+        conn.test_connection()
+        _save_live_state(conn)
+        _generate_and_push_dashboard(auto_push=True)
+        logger.info("Dashboard updated and pushed (dashboard-only mode)")
+        return
+
     mode = TradingMode.LIVE if args.mode == "live" else TradingMode.SHADOW
 
     # ── Logging ──
