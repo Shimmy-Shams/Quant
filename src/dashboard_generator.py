@@ -454,13 +454,51 @@ class DashboardGenerator:
     ];
 
     let countdown = REFRESH_INTERVAL;
-    let liveQuotes = DATA.server_quotes || {{}};  // seed with server-side quotes
+    // Seed with server-side quotes but override marketState with time-based values
+    let liveQuotes = {{}};
+    {{
+        const sq = DATA.server_quotes || {{}};
+        for (const sym of Object.keys(sq)) {{
+            liveQuotes[sym] = Object.assign({{}}, sq[sym], {{ marketState: getCurrentMarketState(sym) }});
+        }}
+    }}
     let equityChart = null;
     let activeWatchSymbol = null;
     let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
     let currentEquityRange = 'all';
     let fetchCount = 0;
     let lastPrices = {{}};  // track previous prices for flash animation
+
+    // ── Time-based market state detection ──────────────────────────────────
+    // Crypto symbols trade 24/7 and are always REGULAR
+    const CRYPTO_SYMS = new Set(['ETHUSD','BTCUSD','SOLUSD','XRPUSD','DOGEUSD','ETCUSD','AVAXUSD','ADAUSD','SHIBUSD','LINKUSD','DOTUSD','LTCUSD','UNIUSD','BCHUSD','AAVEUSD']);
+    function isCrypto(symbol) {{ return CRYPTO_SYMS.has(symbol) || /USD$/.test(symbol); }}
+
+    function getCurrentMarketState(symbol) {{
+        // Crypto = always open
+        if (isCrypto(symbol)) return 'REGULAR';
+
+        // Determine current Eastern Time
+        const now = new Date();
+        const etStr = now.toLocaleString('en-US', {{ timeZone: 'America/New_York' }});
+        const et = new Date(etStr);
+        const day = et.getDay();   // 0=Sun .. 6=Sat
+        const h = et.getHours();
+        const m = et.getMinutes();
+        const minutes = h * 60 + m;  // minutes since midnight ET
+
+        // Weekend = CLOSED
+        if (day === 0 || day === 6) return 'CLOSED';
+
+        // Pre-market:  4:00 AM – 9:29 AM ET
+        if (minutes >= 240 && minutes < 570) return 'PRE';
+        // Regular:     9:30 AM – 3:59 PM ET
+        if (minutes >= 570 && minutes < 960) return 'REGULAR';
+        // Post-market: 4:00 PM – 7:59 PM ET
+        if (minutes >= 960 && minutes < 1200) return 'POST';
+        // Outside all sessions
+        return 'CLOSED';
+    }}
 
     // ── Utilities ─────────────────────────────────────────────────────────
     const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {{minimumFractionDigits:d, maximumFractionDigits:d}});
@@ -909,15 +947,11 @@ class DashboardGenerator:
     }}
 
     function renderMarketStatus() {{
-        const anyQuote = Object.values(liveQuotes)[0];
         const el = document.getElementById('market-status');
-        if (!anyQuote) {{
-            el.textContent = 'Prices: cached';
-            el.className = 'market-badge closed';
-            return;
-        }}
-        const state = anyQuote.marketState;
-        const labels = {{ REGULAR: 'Market Open', PRE: 'Pre-Market', POST: 'After Hours', CLOSED: 'Market Closed', PREPRE: 'Pre-Market', POSTPOST: 'After Hours' }};
+        // Use time-based state for the first equity symbol (not crypto)
+        const equitySym = DATA.positions.map(p => p.symbol).find(s => !isCrypto(s));
+        const state = equitySym ? getCurrentMarketState(equitySym) : 'CLOSED';
+        const labels = {{ REGULAR: 'Market Open', PRE: 'Pre-Market', POST: 'After Hours', CLOSED: 'Market Closed' }};
         el.textContent = labels[state] || state;
         el.className = 'market-badge ' + (state === 'REGULAR' ? 'open' : state === 'CLOSED' ? 'closed' : 'extended');
     }}
@@ -940,17 +974,15 @@ class DashboardGenerator:
             for (const sym of Object.keys(quotes)) {{
                 if (liveQuotes[sym]) lastPrices[sym] = effectivePrice(sym, liveQuotes[sym]);
             }}
-            // Merge: client-side quotes update price/change/volume,
-            // but keep server's marketState/prePrice/postPrice if client lacks them
+            // Merge: use TIME-BASED market state (not stale server snapshot),
+            // inherit extended-hours prices from server if client lacks them
             const serverQ = DATA.server_quotes || {{}};
             for (const sym of Object.keys(quotes)) {{
                 const cq = quotes[sym];
                 const sq = serverQ[sym] || liveQuotes[sym] || {{}};
-                // If client has no valid marketState, inherit from server
-                const cState = (cq.marketState || '').toUpperCase();
-                if (!cState || cState === 'UNKNOWN') {{
-                    cq.marketState = sq.marketState || 'UNKNOWN';
-                }}
+                // Always use time-based market state — the CORS API and server
+                // snapshot are both unreliable for marketState transitions
+                cq.marketState = getCurrentMarketState(sym);
                 // Inherit pre/post prices from server if client lacks them
                 if (!cq.prePrice  && sq.prePrice)  {{ cq.prePrice = sq.prePrice; cq.preChange = sq.preChange; cq.preChangePct = sq.preChangePct; }}
                 if (!cq.postPrice && sq.postPrice) {{ cq.postPrice = sq.postPrice; cq.postChange = sq.postChange; cq.postChangePct = sq.postChangePct; }}
