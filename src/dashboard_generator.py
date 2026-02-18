@@ -91,8 +91,8 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                 pre_change_pct = full_info.get('preMarketChangePercent')
                 if pre_change_pct is not None:
                     pre_change_pct = pre_change_pct * 100
-                # Sanity: recompute if % looks wrong
-                if pre_price and prev_close and pre_change_pct is not None and abs(pre_change_pct) > 50:
+                # Sanity: recompute if % looks wrong (yfinance sometimes returns raw decimal)
+                if pre_price and prev_close and pre_change_pct is not None and abs(pre_change_pct) > 10:
                     pre_change = pre_price - prev_close
                     pre_change_pct = (pre_change / prev_close) * 100 if prev_close else 0
 
@@ -101,7 +101,7 @@ def _fetch_server_quotes(symbols: List[str]) -> Dict:
                 post_change_pct = full_info.get('postMarketChangePercent')
                 if post_change_pct is not None:
                     post_change_pct = post_change_pct * 100
-                if post_price and prev_close and post_change_pct is not None and abs(post_change_pct) > 50:
+                if post_price and prev_close and post_change_pct is not None and abs(post_change_pct) > 10:
                     post_change = post_price - prev_close
                     post_change_pct = (post_change / prev_close) * 100 if prev_close else 0
 
