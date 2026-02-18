@@ -103,6 +103,10 @@ def select_universe(config: ConfigLoader, max_symbols: int = 30) -> list:
     """
     Pick the top mean-reverting symbols from cached Hurst data,
     falling back to DOW 30 if no cache exists.
+
+    This is the STARTUP selection — called once when the process starts.
+    During live trading, refresh_universe_hurst() updates the universe
+    daily with fresh Alpaca data.
     """
     from data.universe_builder import SP500_CORE, NASDAQ_100_CORE, DOW_30, RUSSELL_2000_CORE
 
@@ -143,6 +147,87 @@ def select_universe(config: ConfigLoader, max_symbols: int = 30) -> list:
     return universe
 
 
+def refresh_universe_hurst(
+    adapter: AlpacaDataAdapter,
+    config: ConfigLoader,
+    max_symbols: int = 60,
+) -> list:
+    """
+    Recompute Hurst exponents from FRESH Alpaca data for ALL candidate
+    symbols, then return the top mean-reverters.
+
+    Called at the start of each daily cycle so the universe evolves
+    as stocks' mean-reversion characteristics change over time.
+
+    Steps:
+      1. Build the full candidate list (~216 symbols)
+      2. Fetch 500 days of daily bars for all candidates from Alpaca
+      3. Compute Hurst exponent for each (needs ≥100 data points)
+      4. Keep only H < 0.5 (mean-reverting)
+      5. Rank by H ascending, take top max_symbols
+      6. Save updated hurst_rankings.csv for dashboard & next startup
+
+    Returns the refreshed universe list.
+    """
+    from data.universe_builder import SP500_CORE, NASDAQ_100_CORE, DOW_30, RUSSELL_2000_CORE
+
+    t0 = time.perf_counter()
+
+    # 1. Full candidate pool
+    all_candidates = sorted(set(SP500_CORE + NASDAQ_100_CORE + DOW_30 + RUSSELL_2000_CORE))
+    logger.info(f"Hurst refresh: {len(all_candidates)} candidates")
+
+    # 2. Fetch data for all candidates (cache-aware, 500-day window)
+    try:
+        price_df_all, _, _ = adapter.fetch_pipeline_data(
+            symbols=all_candidates,
+            lookback_days=500,
+            use_cache=True,
+            verbose=False,
+        )
+    except Exception as e:
+        logger.warning(f"Hurst refresh fetch failed: {e} — keeping current universe")
+        return select_universe(config, max_symbols=max_symbols)
+
+    # 3–4. Compute Hurst for each symbol
+    signal_gen = MeanReversionSignals(config.to_signal_config())
+    hurst_results: Dict[str, float] = {}
+
+    for sym in price_df_all.columns:
+        prices = price_df_all[sym].dropna()
+        if len(prices) < 100:
+            continue
+        try:
+            h = signal_gen.calculate_hurst_exponent(prices)
+            if h is not None and h < 0.5:
+                hurst_results[sym] = h
+        except Exception:
+            pass
+
+    if not hurst_results:
+        logger.warning("Hurst refresh: no mean-reverting symbols found — keeping current universe")
+        return select_universe(config, max_symbols=max_symbols)
+
+    # 5. Rank and select top N
+    ranked = sorted(hurst_results.items(), key=lambda x: x[1])
+    universe = [s for s, _ in ranked[:max_symbols]]
+
+    # 6. Save updated rankings CSV
+    hurst_cache = PROJECT_ROOT / "data" / "snapshots" / "hurst_rankings.csv"
+    hurst_cache.parent.mkdir(parents=True, exist_ok=True)
+    hurst_df = pd.DataFrame(ranked, columns=["symbol", "hurst_exponent"])
+    hurst_df.to_csv(hurst_cache, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        f"Hurst refresh done in {elapsed:.1f}s: "
+        f"{len(hurst_results)}/{len(price_df_all.columns)} mean-reverting → top {len(universe)} selected  "
+        f"(H range: {ranked[0][1]:.3f}–{ranked[min(len(ranked)-1, max_symbols-1)][1]:.3f})"
+    )
+
+    return universe
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # DATA & SIGNALS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -150,7 +235,7 @@ def select_universe(config: ConfigLoader, max_symbols: int = 30) -> list:
 def fetch_data(
     adapter: AlpacaDataAdapter,
     universe: list,
-    lookback_days: int = 365,
+    lookback_days: int = 500,
 ):
     """Fetch price+volume data with caching. Returns (price_df, volume_df, raw_bars)."""
     cache_dir = adapter.cache_dir
@@ -245,7 +330,12 @@ def run_daily_cycle(
     """
     cycle_start = time.perf_counter()
 
-    # ── 1. Data ──
+    # ── 0. Refresh universe via fresh Hurst computation ──
+    max_symbols = config.get('alpaca.max_universe_size', 60)
+    universe = refresh_universe_hurst(adapter, config, max_symbols=max_symbols)
+    logger.info(f"Universe refreshed: {len(universe)} symbols → {', '.join(universe[:10])}...")
+
+    # ── 1. Data (now for the refreshed universe) ──
     price_df, volume_df, raw_bars = fetch_data(adapter, universe)
     universe_active = list(price_df.columns)
     logger.info(f"Data ready: {len(universe_active)} symbols, "
