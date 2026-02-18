@@ -289,7 +289,7 @@ class DashboardGenerator:
         <div class="section" id="watchlist-section" style="display:none;">
             <div class="section-header">
                 <div class="section-title">Watchlist &amp; Charts</div>
-                <div id="watchlist-toggle" class="toggle-group"></div>
+                <select id="watchlist-select" onchange="selectWatchSymbol(this.value || null)"></select>
             </div>
             <div id="watchlist-chart" style="display:none;"></div>
             <div id="watchlist-info"></div>
@@ -360,56 +360,69 @@ class DashboardGenerator:
         return s;
     }}
 
-    async function fetchLiveQuotes(symbols) {{
-        if (!symbols.length) return {{}};
-        const yahooSymbols = symbols.map(toYahooSymbol);
-        const symStr = yahooSymbols.join(',');
-        // Cache-bust: append unique timestamp to defeat proxy caching
+    // Fetch a single symbol via Yahoo v8 chart endpoint (more reliable than v7 quote)
+    async function fetchOneQuote(symbol) {{
+        const yahooSym = toYahooSymbol(symbol);
         const cacheBust = Date.now() + '_' + (fetchCount++);
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${{symStr}}&_=${{cacheBust}}`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${{yahooSym}}?range=1d&interval=1m&includePrePost=true&_=${{cacheBust}}`;
 
         for (const makeProxy of CORS_PROXIES) {{
             try {{
                 const resp = await fetch(makeProxy(url), {{
-                    signal: AbortSignal.timeout(8000),
+                    signal: AbortSignal.timeout(6000),
                     cache: 'no-store',
                     headers: {{ 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }}
                 }});
                 if (!resp.ok) continue;
                 const json = await resp.json();
-                const results = json?.quoteResponse?.result;
-                if (!results) continue;
-                const out = {{}};
-                for (const q of results) {{
-                    let sym = q.symbol;
-                    const origSym = symbols.find(s => toYahooSymbol(s) === sym) || sym;
-                    out[origSym] = {{
-                        price:           q.regularMarketPrice,
-                        change:          q.regularMarketChange,
-                        changePct:       q.regularMarketChangePercent,
-                        marketState:     q.marketState,
-                        prePrice:        q.preMarketPrice,
-                        preChange:       q.preMarketChange,
-                        preChangePct:    q.preMarketChangePercent,
-                        postPrice:       q.postMarketPrice,
-                        postChange:      q.postMarketChange,
-                        postChangePct:   q.postMarketChangePercent,
-                        name:            q.shortName || q.symbol,
-                        dayHigh:         q.regularMarketDayHigh,
-                        dayLow:          q.regularMarketDayLow,
-                        volume:          q.regularMarketVolume,
-                        avgVolume:       q.averageDailyVolume3Month,
-                        fiftyTwoHigh:    q.fiftyTwoWeekHigh,
-                        fiftyTwoLow:     q.fiftyTwoWeekLow,
-                        previousClose:   q.regularMarketPreviousClose,
-                    }};
-                }}
-                return out;
+                const result = json?.chart?.result?.[0];
+                if (!result) continue;
+                const meta = result.meta;
+                const prevClose = meta.chartPreviousClose || meta.previousClose;
+                const price = meta.regularMarketPrice;
+                const change = price - prevClose;
+                const changePct = prevClose ? (change / prevClose) * 100 : 0;
+                // Day high/low from indicators
+                const closes = result.indicators?.quote?.[0]?.close || [];
+                const highs  = result.indicators?.quote?.[0]?.high || [];
+                const lows   = result.indicators?.quote?.[0]?.low || [];
+                const vols   = result.indicators?.quote?.[0]?.volume || [];
+                const validHighs = highs.filter(v => v != null);
+                const validLows  = lows.filter(v => v != null);
+                const totalVol   = vols.reduce((a,b) => a + (b||0), 0);
+                return {{
+                    price, change, changePct,
+                    marketState:   meta.marketState || 'UNKNOWN',
+                    prePrice:      meta.preMarketPrice || null,
+                    preChange:     meta.preMarketPrice ? meta.preMarketPrice - prevClose : null,
+                    preChangePct:  meta.preMarketPrice && prevClose ? ((meta.preMarketPrice - prevClose)/prevClose)*100 : null,
+                    postPrice:     meta.postMarketPrice || null,
+                    postChange:    meta.postMarketPrice ? meta.postMarketPrice - prevClose : null,
+                    postChangePct: meta.postMarketPrice && prevClose ? ((meta.postMarketPrice - prevClose)/prevClose)*100 : null,
+                    name:          meta.shortName || meta.symbol || yahooSym,
+                    dayHigh:       validHighs.length ? Math.max(...validHighs) : null,
+                    dayLow:        validLows.length  ? Math.min(...validLows) : null,
+                    volume:        totalVol || meta.regularMarketVolume || null,
+                    avgVolume:     null,
+                    fiftyTwoHigh:  meta.fiftyTwoWeekHigh || null,
+                    fiftyTwoLow:   meta.fiftyTwoWeekLow || null,
+                    previousClose: prevClose,
+                }};
             }} catch (e) {{
-                console.warn('Proxy failed:', e.message);
+                console.warn('Proxy failed for', symbol, ':', e.message);
             }}
         }}
-        return {{}};
+        return null;
+    }}
+
+    async function fetchLiveQuotes(symbols) {{
+        if (!symbols.length) return {{}};
+        const results = await Promise.allSettled(symbols.map(s => fetchOneQuote(s)));
+        const out = {{}};
+        results.forEach((r, i) => {{
+            if (r.status === 'fulfilled' && r.value) out[symbols[i]] = r.value;
+        }});
+        return out;
     }}
 
     // ── Render helpers ────────────────────────────────────────────────────
@@ -571,14 +584,13 @@ class DashboardGenerator:
 
         document.getElementById('watchlist-section').style.display = 'block';
 
-        // Build toggle buttons
-        const toggleEl = document.getElementById('watchlist-toggle');
-        let btns = positions.map(p => {{
-            const isActive = activeWatchSymbol === p.symbol;
-            return `<button class="toggle-btn ${{isActive ? 'active' : ''}}" onclick="selectWatchSymbol('${{p.symbol}}')">${{p.symbol}}</button>`;
+        // Build dropdown selector
+        const selectEl = document.getElementById('watchlist-select');
+        let opts = `<option value=""${{!activeWatchSymbol ? ' selected' : ''}}>Select a symbol…</option>`;
+        opts += positions.map(p => {{
+            return `<option value="${{p.symbol}}"${{activeWatchSymbol === p.symbol ? ' selected' : ''}}>${{p.symbol}}</option>`;
         }}).join('');
-        btns += `<button class="toggle-btn ${{!activeWatchSymbol ? 'active' : ''}}" onclick="selectWatchSymbol(null)">None</button>`;
-        toggleEl.innerHTML = btns;
+        selectEl.innerHTML = opts;
 
         // Render info cards for all positions (compact, no charts)
         const infoCards = positions.map(p => {{
@@ -625,7 +637,7 @@ class DashboardGenerator:
     }}
 
     function selectWatchSymbol(symbol) {{
-        activeWatchSymbol = (activeWatchSymbol === symbol) ? null : symbol;
+        activeWatchSymbol = symbol || null;
         renderWatchlist();
     }}
 
@@ -958,7 +970,23 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 .chart-container { height: 350px; position: relative; }
 .chart-container.chart-lg { height: 400px; }
 
-/* Toggle groups */
+/* Watchlist dropdown */
+#watchlist-select {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    min-width: 160px;
+}
+#watchlist-select:hover, #watchlist-select:focus { border-color: #667eea; }
+#watchlist-select option { background: #161b22; color: #c9d1d9; }
+
+/* Toggle groups (equity range) */
 .toggle-group { display: flex; gap: 4px; flex-wrap: wrap; }
 .toggle-btn {
     background: #21262d;
