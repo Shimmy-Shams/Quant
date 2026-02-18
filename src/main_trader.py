@@ -572,7 +572,7 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
     try:
         import subprocess
         
-        # Generate dashboard
+        # Generate dashboard on main branch (where live_state.json is available)
         generator = DashboardGenerator(PROJECT_ROOT)
         output_path = PROJECT_ROOT / "docs" / "index.html"
         
@@ -580,6 +580,10 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
             logger.info(f"✅ Dashboard generated: {output_path}")
             
             if auto_push:
+                # Read the generated HTML into memory BEFORE switching branches
+                # (live_state.json gets stashed away during branch switch)
+                dashboard_html = output_path.read_text()
+                
                 # Push to dashboard-live branch (keeps main clean)
                 try:
                     git = lambda *args, **kw: subprocess.run(
@@ -600,9 +604,10 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                         git("checkout", "--orphan", "dashboard-live")
                         git("reset", "--hard")
                     
-                    # Copy the generated dashboard into the branch
+                    # Write the pre-generated HTML (NOT regenerating —
+                    # live_state.json/equity_history.json may be stashed)
                     output_path.parent.mkdir(parents=True, exist_ok=True)
-                    generator.generate(output_path)
+                    output_path.write_text(dashboard_html)
                     
                     git("add", "docs/index.html")
                     commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
