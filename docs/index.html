@@ -6,252 +6,524 @@
     <title>Quant Trading Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #0d1117;
-            color: #c9d1d9;
-            padding: 20px;
-        }
-        .container { max-width: 1400px; margin: 0 auto; }
-        h1 { 
-            font-size: 2em; 
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .timestamp {
-            color: #8b949e;
-            font-size: 0.9em;
-            margin-bottom: 30px;
-        }
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-        .metric-card {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        .metric-label { color: #8b949e; font-size: 0.85em; margin-bottom: 8px; }
-        .metric-value { font-size: 1.8em; font-weight: 600; }
-        .positive { color: #3fb950; }
-        .negative { color: #f85149; }
-        .section {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 25px;
-            margin-bottom: 25px;
-        }
-        .section-title { font-size: 1.3em; margin-bottom: 20px; font-weight: 600; }
-        table { width: 100%; border-collapse: collapse; }
-        th { 
-            text-align: left; 
-            padding: 12px; 
-            border-bottom: 2px solid #30363d;
-            color: #8b949e;
-            font-weight: 500;
-            font-size: 0.9em;
-        }
-        td { padding: 12px; border-bottom: 1px solid #21262d; }
-        .badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            font-weight: 500;
-        }
-        .badge-long { background: #238636; color: #fff; }
-        .badge-short { background: #da3633; color: #fff; }
-        #equityChart { max-height: 400px; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 24px;
+    line-height: 1.5;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+.header h1 {
+    font-size: 1.8em;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.subtitle { color: #8b949e; font-size: 0.95em; margin-top: 4px; }
+.header-right { text-align: right; }
+.timestamp { color: #8b949e; font-size: 0.85em; margin-top: 4px; }
+
+/* Market status badge */
+.market-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.market-badge.open     { background: #238636; color: #fff; }
+.market-badge.closed   { background: #30363d; color: #8b949e; }
+.market-badge.extended { background: #9e6a03; color: #fff; }
+
+/* Metric cards */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+}
+.metric-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s;
+}
+.metric-card:hover { border-color: #667eea; }
+.metric-label { color: #8b949e; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.metric-value { font-size: 1.6em; font-weight: 700; }
+
+/* Positive / Negative */
+.positive { color: #3fb950; }
+.negative { color: #f85149; }
+
+/* Sections */
+.section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.section-title { font-size: 1.2em; font-weight: 600; margin-bottom: 16px; }
+.section-header .section-title { margin-bottom: 0; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid #30363d;
+    color: #8b949e;
+    font-weight: 500;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+td { padding: 10px 14px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+tbody tr:hover { background: rgba(102,126,234,0.04); }
+tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px; }
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.badge-long   { background: #238636; color: #fff; }
+.badge-short  { background: #da3633; color: #fff; }
+.badge-buy    { background: #238636; color: #fff; }
+.badge-sell   { background: #da3633; color: #fff; }
+.badge-filled { background: #1f6feb; color: #fff; }
+.badge-closed { background: #30363d; color: #8b949e; }
+
+/* After-hours info */
+.ah-badge {
+    font-size: 0.8em;
+    color: #d29922;
+    margin-top: 2px;
+}
+.stock-name { font-size: 0.78em; color: #8b949e; }
+
+/* Live dot */
+.live-dot { color: #3fb950; }
+.live-dot::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #3fb950; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Price status */
+.price-status { font-size: 0.85em; color: #8b949e; }
+
+/* Chart */
+.chart-container { height: 350px; position: relative; }
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #484f58;
+    font-size: 0.82em;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #21262d;
+}
+.footer a { color: #667eea; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+.muted { color: #484f58; font-style: italic; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { padding: 12px; }
+    .header { flex-direction: column; }
+    .header-right { text-align: left; }
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .metric-value { font-size: 1.3em; }
+}
+
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📈 Quant Trading Dashboard</h1>
-        <div class="timestamp">Last Updated: 2026-02-18 06:22:06 UTC</div>
-        
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="metric-label">Portfolio Value</div>
-                <div class="metric-value">$999,412.76</div>
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>Quant Trading Dashboard</h1>
+                <div class="subtitle">Mean Reversion Strategy &middot; Alpaca Paper Trading</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Total Return</div>
-                <div class="metric-value negative">
-                    -0.06%
-                </div>
+            <div class="header-right">
+                <div id="market-status" class="market-badge">Loading...</div>
+                <div id="last-update" class="timestamp"></div>
+                <div id="refresh-countdown" class="timestamp"></div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Win Rate</div>
-                <div class="metric-value">0.0%</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Total Trades</div>
-                <div class="metric-value">4</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Sharpe Ratio</div>
-                <div class="metric-value">0.00</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Max Drawdown</div>
-                <div class="metric-value negative">0.00%</div>
-            </div>
-        </div>
-        
+        </header>
+
+        <!-- Account Summary Cards -->
+        <div class="metrics-grid" id="metrics-grid"></div>
+
+        <!-- Positions -->
         <div class="section">
-            <div class="section-title">Open Positions (2)</div>
-            <div id="positions-container">
-                
+            <div class="section-header">
+                <div class="section-title">Open Positions</div>
+                <div id="price-status" class="price-status"></div>
             </div>
+            <div id="positions-table" class="table-wrap"></div>
         </div>
-        
+
+        <!-- Equity Curve -->
         <div class="section">
             <div class="section-title">Equity Curve</div>
-            <canvas id="equityChart"></canvas>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Recent Trades (Last 50)</div>
-            <div id="trades-container" style="overflow-x: auto;">
-                
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
             </div>
+            <p id="no-equity" class="muted" style="display:none;">
+                Equity curve data will appear after shadow replay or trading cycles.
+            </p>
         </div>
+
+        <!-- Recent Trades -->
+        <div class="section">
+            <div class="section-title">Recent Trades</div>
+            <div id="trades-table" class="table-wrap"></div>
+        </div>
+
+        <footer class="footer">
+            Dashboard data pushed after each trading cycle &middot;
+            Live prices fetched from Yahoo Finance on page load &middot;
+            <a href="https://github.com/Shimmy-Shams/Quant" target="_blank">GitHub</a>
+        </footer>
     </div>
-    
+
     <script>
-        // Data
-        const equityData = [];
-        const positionsData = [{"symbol": "CRWD", "side": "long", "qty": 232, "entry_price": 413.960733, "current_price": 411.43, "pnl": -587.130056, "pnl_pct": -0.611, "entry_date": "N/A", "signal": 0.0}, {"symbol": "ETHUSD", "side": "short", "qty": 0, "entry_price": 1989.4, "current_price": 1998.398, "pnl": 0.110596, "pnl_pct": 0.45199999999999996, "entry_date": "N/A", "signal": 0.0}];
-        const tradesData = [{"symbol": "CRWD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 413.960733, "exit_price": 413.960733, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "ETH/USD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 1989.4, "exit_price": 1989.4, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "BTC/USD", "side": "sell", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 68441.72, "exit_price": 68441.72, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}, {"symbol": "BTC/USD", "side": "buy", "entry_date": "2026-02-17", "exit_date": "2026-02-17", "entry_price": 68504.9, "exit_price": 68504.9, "pnl": 0.0, "pnl_pct": 0.0, "holding_days": 0, "exit_reason": "Order filled"}];
-        
-        // Render positions table
-        if (positionsData.length > 0) {
-            const posHtml = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Qty</th>
-                            <th>Entry</th>
-                            <th>Current</th>
-                            <th>P&L</th>
-                            <th>P&L %</th>
-                            <th>Entry Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${positionsData.map(p => `
-                            <tr>
-                                <td><strong>${p.symbol}</strong></td>
-                                <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
-                                <td>${p.qty}</td>
-                                <td>$$${p.entry_price.toFixed(2)}</td>
-                                <td>$$${p.current_price.toFixed(2)}</td>
-                                <td class="${p.pnl >= 0 ? 'positive' : 'negative'}">$$${p.pnl.toFixed(2)}</td>
-                                <td class="${p.pnl_pct >= 0 ? 'positive' : 'negative'}">${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(2)}%</td>
-                                <td>${p.entry_date}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            document.getElementById('positions-container').innerHTML = posHtml;
+    // ── Embedded server-side data ─────────────────────────────────────────
+    const DATA = {"positions": [{"symbol": "ETHUSD", "side": "long", "qty": 0, "entry_price": 1970.17, "current_price": 1970.17, "market_value": 24.29, "pnl": -0.1, "pnl_pct": -0.41}], "trades": [{"symbol": "ETHUSD", "side": "buy", "qty": 0.01229, "price": 1970.17, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999999.62, "cash": 999975.33, "portfolio_value": 999999.62, "buying_power": 1999950.66}, "equity_curve": [], "metrics": {"portfolio_value": 999999.62, "cash": 999975.33, "buying_power": 1999950.66, "total_return_pct": -3.800000000046566e-05, "total_trades": 1, "win_rate": 0.0, "sharpe_ratio": 0.0, "max_drawdown": 0.0}, "generated_utc": "2026-02-18 08:37:07"};
+
+    // ── Configuration ─────────────────────────────────────────────────────
+    const REFRESH_INTERVAL = 30;          // seconds between price refreshes
+    const INITIAL_CAPITAL   = 1000000;
+    const CORS_PROXIES = [
+        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+        url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    ];
+
+    let countdown = REFRESH_INTERVAL;
+    let liveQuotes = {};  // symbol -> quote data
+
+    // ── Utilities ─────────────────────────────────────────────────────────
+    const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d});
+    const fmtD = (v)      => v == null ? '—' : '$' + fmt(v);
+    const fmtP = (v)      => v == null ? '—' : (v >= 0 ? '+' : '') + fmt(v) + '%';
+    const cls  = (v)      => v >= 0 ? 'positive' : 'negative';
+
+    // ── Yahoo Finance live price fetcher ──────────────────────────────────
+    async function fetchLiveQuotes(symbols) {
+        if (!symbols.length) return {};
+        const symStr = symbols.join(',');
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symStr}`;
+
+        for (const makeProxy of CORS_PROXIES) {
+            try {
+                const resp = await fetch(makeProxy(url), { signal: AbortSignal.timeout(8000) });
+                if (!resp.ok) continue;
+                const json = await resp.json();
+                const results = json?.quoteResponse?.result;
+                if (!results) continue;
+                const out = {};
+                for (const q of results) {
+                    out[q.symbol] = {
+                        price:           q.regularMarketPrice,
+                        change:          q.regularMarketChange,
+                        changePct:       q.regularMarketChangePercent,
+                        marketState:     q.marketState,
+                        prePrice:        q.preMarketPrice,
+                        preChange:       q.preMarketChange,
+                        preChangePct:    q.preMarketChangePercent,
+                        postPrice:       q.postMarketPrice,
+                        postChange:      q.postMarketChange,
+                        postChangePct:   q.postMarketChangePercent,
+                        name:            q.shortName || q.symbol,
+                    };
+                }
+                return out;
+            } catch (e) {
+                console.warn('Proxy failed:', e.message);
+            }
         }
-        
-        // Render trades table
-        if (tradesData.length > 0) {
-            const tradesHtml = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Entry Date</th>
-                            <th>Exit Date</th>
-                            <th>Days</th>
-                            <th>P&L %</th>
-                            <th>Exit Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tradesData.map(t => `
-                            <tr>
-                                <td><strong>${t.symbol}</strong></td>
-                                <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
-                                <td>${t.entry_date}</td>
-                                <td>${t.exit_date}</td>
-                                <td>${t.holding_days}</td>
-                                <td class="${t.pnl_pct >= 0 ? 'positive' : 'negative'}">${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct.toFixed(2)}%</td>
-                                <td style="font-size: 0.9em; color: #8b949e;">${t.exit_reason}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            document.getElementById('trades-container').innerHTML = tradesHtml;
+        return {};
+    }
+
+    // ── Render helpers ────────────────────────────────────────────────────
+
+    function renderMetrics() {
+        const m = DATA.metrics;
+        const a = DATA.account;
+        const pv = livePortfolioValue();
+
+        const cards = [
+            { label: 'Portfolio Value', value: fmtD(pv), cls: '' },
+            { label: 'Cash', value: fmtD(a.cash), cls: '' },
+            { label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) },
+            { label: 'Open Positions', value: DATA.positions.length, cls: '' },
+            { label: 'Trades Executed', value: m.total_trades, cls: '' },
+            { label: 'Sharpe Ratio', value: fmt(m.sharpe_ratio), cls: m.sharpe_ratio >= 0 ? 'positive' : 'negative' },
+        ];
+
+        document.getElementById('metrics-grid').innerHTML = cards.map(c => `
+            <div class="metric-card">
+                <div class="metric-label">${c.label}</div>
+                <div class="metric-value ${c.cls}">${c.value}</div>
+            </div>
+        `).join('');
+    }
+
+    function livePortfolioValue() {
+        let positionValue = 0;
+        for (const p of DATA.positions) {
+            const q = liveQuotes[p.symbol];
+            const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+            positionValue += curPrice * Math.abs(p.qty);
         }
-        
-        // Equity curve chart
-        if (equityData.length > 0) {
-            const ctx = document.getElementById('equityChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: equityData.map(d => d.date),
-                    datasets: [{
-                        label: 'Equity',
-                        data: equityData.map(d => d.equity),
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#161b22',
-                            borderColor: '#30363d',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: (context) => `Equity: $$${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            grid: { color: '#21262d' },
-                            ticks: { 
-                                color: '#8b949e',
-                                callback: (value) => '$' + value.toLocaleString()
-                            }
-                        },
-                        x: {
-                            grid: { color: '#21262d' },
-                            ticks: { 
-                                color: '#8b949e',
-                                maxRotation: 45,
-                                minRotation: 45
-                            }
+        if (Object.keys(liveQuotes).length > 0 && DATA.positions.length > 0) {
+            return DATA.account.cash + positionValue;
+        }
+        return DATA.account.portfolio_value || INITIAL_CAPITAL;
+    }
+
+    function effectivePrice(symbol, quote) {
+        if (!quote) return null;
+        const state = quote.marketState;
+        if (state === 'POST' && quote.postPrice) return quote.postPrice;
+        if (state === 'PRE'  && quote.prePrice)  return quote.prePrice;
+        return quote.price;
+    }
+
+    function renderPositions() {
+        const positions = DATA.positions;
+        if (!positions.length) {
+            document.getElementById('positions-table').innerHTML =
+                '<p class="muted">No open positions</p>';
+            return;
+        }
+
+        let rows = '';
+        let totalPnl = 0;
+        for (const p of positions) {
+            const q = liveQuotes[p.symbol];
+            const livePrice = effectivePrice(p.symbol, q);
+            const curPrice = livePrice || p.current_price;
+            const pnl = p.side === 'short'
+                ? (p.entry_price - curPrice) * Math.abs(p.qty)
+                : (curPrice - p.entry_price) * Math.abs(p.qty);
+            const pnlPct = (pnl / (p.entry_price * Math.abs(p.qty))) * 100;
+            totalPnl += pnl;
+
+            let ahBadge = '';
+            if (q) {
+                const state = q.marketState;
+                if (state === 'POST' && q.postPrice) {
+                    ahBadge = `<div class="ah-badge">AH $$${fmt(q.postPrice)} <span class="${cls(q.postChangePct)}">${fmtP(q.postChangePct)}</span></div>`;
+                } else if (state === 'PRE' && q.prePrice) {
+                    ahBadge = `<div class="ah-badge">PM $$${fmt(q.prePrice)} <span class="${cls(q.preChangePct)}">${fmtP(q.preChangePct)}</span></div>`;
+                } else if (state === 'REGULAR') {
+                    ahBadge = `<div class="ah-badge live-dot">LIVE</div>`;
+                }
+            }
+
+            rows += `<tr>
+                <td>
+                    <strong>${p.symbol}</strong>
+                    ${q ? `<div class="stock-name">${q.name || ''}</div>` : ''}
+                </td>
+                <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
+                <td>${Math.abs(p.qty)}</td>
+                <td>$$${fmt(p.entry_price)}</td>
+                <td>
+                    $$${fmt(curPrice)}
+                    ${ahBadge}
+                </td>
+                <td class="${cls(pnl)}">$$${fmt(pnl)}</td>
+                <td class="${cls(pnlPct)}">${fmtP(pnlPct)}</td>
+            </tr>`;
+        }
+
+        document.getElementById('positions-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Entry</th><th>Current</th><th>P&amp;L</th><th>P&amp;L %</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot><tr>
+                    <td colspan="5" style="text-align:right;font-weight:600;">Total Unrealized P&amp;L</td>
+                    <td class="${cls(totalPnl)}" style="font-weight:600;">$$${fmt(totalPnl)}</td>
+                    <td></td>
+                </tr></tfoot>
+            </table>`;
+    }
+
+    function renderTrades() {
+        const trades = DATA.trades;
+        if (!trades.length) {
+            document.getElementById('trades-table').innerHTML =
+                '<p class="muted">No trades yet</p>';
+            return;
+        }
+        let rows = trades.map(t => `
+            <tr>
+                <td><strong>${t.symbol}</strong></td>
+                <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+                <td>${t.qty}</td>
+                <td>$$${fmt(t.price)}</td>
+                <td>${t.date}</td>
+                <td>${t.pnl_pct != null ? `<span class="${cls(t.pnl_pct)}">${fmtP(t.pnl_pct)}</span>` : '—'}</td>
+                <td><span class="badge badge-filled">${t.status}</span></td>
+            </tr>
+        `).join('');
+
+        document.getElementById('trades-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Price</th><th>Date</th><th>P&amp;L</th><th>Status</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
+    function renderEquityChart() {
+        const eq = DATA.equity_curve;
+        if (!eq.length) {
+            document.getElementById('no-equity').style.display = 'block';
+            return;
+        }
+        const ctx = document.getElementById('equityChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: eq.map(d => d.date),
+                datasets: [{
+                    label: 'Equity',
+                    data: eq.map(d => d.equity),
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102,126,234,0.08)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#161b22',
+                        borderColor: '#30363d',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: ctx => 'Equity: $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2})
                         }
                     }
+                },
+                scales: {
+                    y: {
+                        grid: { color: '#21262d' },
+                        ticks: { color: '#8b949e', callback: v => '$' + v.toLocaleString() }
+                    },
+                    x: {
+                        grid: { color: '#21262d' },
+                        ticks: { color: '#8b949e', maxRotation: 45, autoSkipPadding: 20 }
+                    }
                 }
-            });
+            }
+        });
+    }
+
+    function renderMarketStatus() {
+        const anyQuote = Object.values(liveQuotes)[0];
+        const el = document.getElementById('market-status');
+        if (!anyQuote) {
+            el.textContent = 'Prices: cached';
+            el.className = 'market-badge closed';
+            return;
         }
+        const state = anyQuote.marketState;
+        const labels = { REGULAR: 'Market Open', PRE: 'Pre-Market', POST: 'After Hours', CLOSED: 'Market Closed', PREPRE: 'Pre-Market', POSTPOST: 'After Hours' };
+        el.textContent = labels[state] || state;
+        el.className = 'market-badge ' + (state === 'REGULAR' ? 'open' : state === 'CLOSED' ? 'closed' : 'extended');
+    }
+
+    function updateTimestamps() {
+        document.getElementById('last-update').textContent =
+            'Data snapshot: ' + DATA.generated_utc + ' UTC';
+    }
+
+    // ── Main loop ─────────────────────────────────────────────────────────
+
+    async function refreshPrices() {
+        const symbols = DATA.positions.map(p => p.symbol);
+        if (symbols.length === 0) return;
+
+        document.getElementById('price-status').textContent = 'Fetching live prices...';
+        const quotes = await fetchLiveQuotes(symbols);
+        if (Object.keys(quotes).length > 0) {
+            liveQuotes = quotes;
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot">&#9679;</span> Live prices (auto-refresh every 30s)';
+        } else {
+            document.getElementById('price-status').textContent = 'Using cached prices (live fetch unavailable)';
+        }
+
+        renderPositions();
+        renderMetrics();
+        renderMarketStatus();
+    }
+
+    function startCountdown() {
+        setInterval(() => {
+            countdown--;
+            const el = document.getElementById('refresh-countdown');
+            if (countdown <= 0) {
+                countdown = REFRESH_INTERVAL;
+                el.textContent = 'Refreshing...';
+                refreshPrices();
+            } else {
+                el.textContent = `Next refresh: ${countdown}s`;
+            }
+        }, 1000);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    (async function init() {
+        updateTimestamps();
+        renderMetrics();
+        renderPositions();
+        renderTrades();
+        renderEquityChart();
+
+        await refreshPrices();
+        startCountdown();
+    })();
     </script>
 </body>
 </html>

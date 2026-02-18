@@ -1,8 +1,17 @@
 """
-Static Dashboard Generator
+Live Dashboard Generator
 
-Generates a beautiful HTML dashboard from trading logs and shadow state.
-Used after each trading cycle to create GitHub Pages content.
+Generates a self-updating HTML dashboard that:
+1. Embeds position/account/trade data from the server
+2. Fetches LIVE prices (including after-hours) via Yahoo Finance on page load
+3. Auto-refreshes prices every 30 seconds
+4. Beautiful dark theme with modern financial dashboard UX
+
+Architecture:
+  - Server side (Python): Reads live_state.json + shadow_state.csv,
+    embeds data as JSON in the HTML
+  - Client side (JS): On page load, fetches current/after-hours quotes
+    from Yahoo Finance via CORS proxy, updates P&L in real-time
 """
 
 import json
@@ -14,243 +23,210 @@ import numpy as np
 
 
 class DashboardGenerator:
-    """Generate static HTML dashboard from trading data"""
-    
+    """Generate a live-updating HTML dashboard from trading data"""
+
     def __init__(self, project_root: Path):
         self.project_root = project_root
         self.data_dir = project_root / "data"
         self.shadow_state = self.data_dir / "snapshots" / "shadow_state.csv"
         self.live_state = self.data_dir / "snapshots" / "live_state.json"
         self.trading_logs_dir = self.data_dir / "snapshots" / "trading_logs"
-    
+
     def generate(self, output_path: Path) -> bool:
         """Generate dashboard HTML file"""
         try:
-            # Gather data
             positions = self._load_positions()
-            equity_curve = self._load_equity_curve()
             trades = self._load_trades()
-            metrics = self._calculate_metrics(equity_curve, trades)
-            
-            # Generate HTML
-            html = self._build_html(positions, equity_curve, trades, metrics)
-            
-            # Write file
+            account = self._load_account()
+            equity_curve = self._load_equity_curve()
+            metrics = self._calculate_metrics(account, equity_curve, trades)
+
+            html = self._build_html(positions, trades, account, equity_curve, metrics)
+
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html)
-            
             return True
         except Exception as e:
             print(f"Dashboard generation error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-    
-    def _load_positions(self) -> List[Dict]:
-        """Load current open positions"""
-        positions = []
-        
-        # Prefer live state if available
+
+    # ── Data Loading ──────────────────────────────────────────────────────
+
+    def _load_account(self) -> Dict:
+        """Load account summary from live_state.json"""
+        default = {
+            "equity": 0, "cash": 0, "portfolio_value": 0, "buying_power": 0
+        }
         if self.live_state.exists():
             try:
-                with open(self.live_state, 'r') as f:
+                with open(self.live_state, "r") as f:
+                    data = json.load(f)
+                return data.get("account", default)
+            except Exception:
+                pass
+        return default
+
+    def _load_positions(self) -> List[Dict]:
+        """Load current open positions (prefer live, fallback to shadow)"""
+        positions = []
+
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, "r") as f:
                     live_data = json.load(f)
-                
-                for pos in live_data.get('positions', []):
+                for pos in live_data.get("positions", []):
                     positions.append({
-                        'symbol': pos['symbol'],
-                        'side': pos['side'],
-                        'qty': int(pos['qty']),
-                        'entry_price': float(pos['entry_price']),
-                        'current_price': float(pos['current_price']),
-                        'pnl': float(pos['unrealized_pl']),
-                        'pnl_pct': float(pos['unrealized_plpc']),
-                        'entry_date': 'N/A',  # Not available from Alpaca position
-                        'signal': 0.0,  # Not tracked in live mode
+                        "symbol": pos["symbol"],
+                        "side": pos.get("side", "long"),
+                        "qty": int(pos["qty"]),
+                        "entry_price": float(pos["entry_price"]),
+                        "current_price": float(pos["current_price"]),
+                        "market_value": float(pos.get("market_value", 0)),
+                        "pnl": float(pos.get("unrealized_pl", 0)),
+                        "pnl_pct": float(pos.get("unrealized_plpc", 0)),
                     })
                 return positions
             except Exception as e:
                 print(f"Error loading live positions: {e}")
-        
-        # Fall back to shadow state
-        if not self.shadow_state.exists():
-            return positions
-        
-        try:
-            df = pd.read_csv(self.shadow_state)
-            for _, row in df.iterrows():
-                pnl = (row['current_price'] - row['entry_price']) * row['qty']
-                if row['side'] == 'short':
-                    pnl = -pnl
-                pnl_pct = (pnl / (row['entry_price'] * abs(row['qty']))) * 100
-                
-                positions.append({
-                    'symbol': row['symbol'],
-                    'side': row['side'],
-                    'qty': int(row['qty']),
-                    'entry_price': float(row['entry_price']),
-                    'current_price': float(row['current_price']),
-                    'pnl': round(pnl, 2),
-                    'pnl_pct': round(pnl_pct, 2),
-                    'entry_date': str(row['entry_date'])[:10],
-                    'signal': round(float(row.get('signal_strength', 0)), 2)
-                })
-        except Exception as e:
-            print(f"Error loading positions: {e}")
-        
+
+        # Fallback: shadow state
+        if self.shadow_state.exists():
+            try:
+                df = pd.read_csv(self.shadow_state)
+                for _, row in df.iterrows():
+                    pnl = (row["current_price"] - row["entry_price"]) * row["qty"]
+                    if row["side"] == "short":
+                        pnl = -pnl
+                    pnl_pct = (pnl / (row["entry_price"] * abs(row["qty"]))) * 100
+                    positions.append({
+                        "symbol": row["symbol"],
+                        "side": row["side"],
+                        "qty": int(row["qty"]),
+                        "entry_price": float(row["entry_price"]),
+                        "current_price": float(row["current_price"]),
+                        "market_value": float(row["current_price"] * abs(row["qty"])),
+                        "pnl": round(pnl, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                    })
+            except Exception as e:
+                print(f"Error loading shadow positions: {e}")
+
         return positions
-    
+
+    def _load_trades(self) -> List[Dict]:
+        """Load recent trades"""
+        trades = []
+
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, "r") as f:
+                    live_data = json.load(f)
+                for trade in live_data.get("recent_trades", []):
+                    exec_date = trade.get("submitted_at", "")[:10] if trade.get("submitted_at") else "N/A"
+                    trades.append({
+                        "symbol": trade["symbol"],
+                        "side": trade["side"],
+                        "qty": float(trade.get("qty", 0)),
+                        "price": float(trade.get("filled_price", 0)),
+                        "date": exec_date,
+                        "status": "filled",
+                    })
+                if trades:
+                    return sorted(trades, key=lambda x: x["date"], reverse=True)[:50]
+            except Exception as e:
+                print(f"Error loading live trades: {e}")
+
+        # Fallback: shadow trade logs
+        if self.trading_logs_dir and self.trading_logs_dir.exists():
+            try:
+                for log_file in sorted(self.trading_logs_dir.glob("trades_*.csv")):
+                    df = pd.read_csv(log_file)
+                    for _, row in df.iterrows():
+                        trades.append({
+                            "symbol": row["symbol"],
+                            "side": row["side"],
+                            "qty": int(row.get("qty", 0)),
+                            "price": float(row.get("exit_price", row.get("entry_price", 0))),
+                            "date": str(row.get("exit_date", row.get("entry_date", "")))[:10],
+                            "pnl_pct": round(float(row.get("pnl_pct", 0)) * 100, 2),
+                            "status": "closed",
+                        })
+            except Exception as e:
+                print(f"Error loading trade logs: {e}")
+
+        return sorted(trades, key=lambda x: x["date"], reverse=True)[:50]
+
     def _load_equity_curve(self) -> List[Dict]:
         """Load equity curve from trading logs"""
         equity_data = []
-        if not self.trading_logs_dir.exists():
+        if not self.trading_logs_dir or not self.trading_logs_dir.exists():
             return equity_data
-        
         try:
             for log_file in sorted(self.trading_logs_dir.glob("equity_*.csv")):
                 df = pd.read_csv(log_file)
-                if 'date' in df.columns and 'equity' in df.columns:
+                if "date" in df.columns and "equity" in df.columns:
                     for _, row in df.iterrows():
                         equity_data.append({
-                            'date': str(row['date'])[:10],
-                            'equity': float(row['equity']),
-                            'daily_return': float(row.get('daily_return', 0)) * 100
+                            "date": str(row["date"])[:10],
+                            "equity": float(row["equity"]),
                         })
         except Exception as e:
             print(f"Error loading equity curve: {e}")
-        
-        return sorted(equity_data, key=lambda x: x['date'])
-    
-    def _load_trades(self) -> List[Dict]:
-        """Load completed trades"""
-        trades = []
-        
-        # Prefer live trades if available
-        if self.live_state.exists():
-            try:
-                with open(self.live_state, 'r') as f:
-                    live_data = json.load(f)
-                
-                for trade in live_data.get('recent_trades', []):
-                    # Group buy/sell pairs by symbol to calculate P&L
-                    # For now, just display the orders
-                    exec_date = trade['submitted_at'][:10] if trade.get('submitted_at') else 'N/A'
-                    trades.append({
-                        'symbol': trade['symbol'],
-                        'side': trade['side'],
-                        'entry_date': exec_date,
-                        'exit_date': exec_date,
-                        'entry_price': float(trade.get('filled_price', 0)),
-                        'exit_price': float(trade.get('filled_price', 0)),
-                        'pnl': 0.0,  # Can't calculate without matching pairs
-                        'pnl_pct': 0.0,
-                        'holding_days': 0,
-                        'exit_reason': f"Signal exit (z={trade.get('signal_z', 'N/A')})" if 'signal_z' in trade else "Order filled"
-                    })
-                
-                if trades:
-                    return sorted(trades, key=lambda x: x['exit_date'], reverse=True)[:50]
-            except Exception as e:
-                print(f"Error loading live trades: {e}")
-        
-        # Fall back to shadow mode trade logs
-        if not self.trading_logs_dir.exists():
-            return trades
-        
-        try:
-            for log_file in sorted(self.trading_logs_dir.glob("trades_*.csv")):
-                df = pd.read_csv(log_file)
-                for _, row in df.iterrows():
-                    trades.append({
-                        'symbol': row['symbol'],
-                        'side': row['side'],
-                        'entry_date': str(row['entry_date'])[:10],
-                        'exit_date': str(row.get('exit_date', ''))[:10],
-                        'entry_price': float(row.get('entry_price', 0)),
-                        'exit_price': float(row.get('exit_price', 0)),
-                        'pnl': float(row.get('pnl', 0)),
-                        'pnl_pct': round(float(row.get('pnl_pct', 0)) * 100, 2),
-                        'holding_days': int(row.get('holding_days', 0)),
-                        'exit_reason': row.get('exit_reason', 'Open')
-                    })
-        except Exception as e:
-            print(f"Error loading trades: {e}")
-        
-        return sorted(trades, key=lambda x: x['exit_date'], reverse=True)
-    
-    def _calculate_metrics(self, equity_curve: List[Dict], trades: List[Dict]) -> Dict:
-        """Calculate performance metrics"""
+        return sorted(equity_data, key=lambda x: x["date"])
+
+    def _calculate_metrics(self, account: Dict, equity_curve: List[Dict], trades: List[Dict]) -> Dict:
+        """Calculate summary metrics"""
+        initial_capital = 1_000_000.0  # Alpaca paper account
+        current = float(account.get("portfolio_value", 0)) or initial_capital
         metrics = {
-            'current_equity': 100000.0,
-            'total_return': 0.0,
-            'total_return_pct': 0.0,
-            'total_trades': len(trades),
-            'win_rate': 0.0,
-            'avg_win': 0.0,
-            'avg_loss': 0.0,
-            'max_drawdown': 0.0,
-            'sharpe_ratio': 0.0,
+            "portfolio_value": current,
+            "cash": float(account.get("cash", 0)),
+            "buying_power": float(account.get("buying_power", 0)),
+            "total_return_pct": ((current - initial_capital) / initial_capital) * 100,
+            "total_trades": len(trades),
+            "win_rate": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
         }
-        
-        # Try to get current equity from live state first
-        if self.live_state.exists():
-            try:
-                with open(self.live_state, 'r') as f:
-                    live_data = json.load(f)
-                metrics['current_equity'] = live_data['account']['portfolio_value']
-                # Calculate return from $1M starting capital (Alpaca paper account)
-                initial = 1000000.0
-                current = metrics['current_equity']
-                metrics['total_return'] = current - initial
-                metrics['total_return_pct'] = ((current - initial) / initial) * 100
-            except Exception as e:
-                print(f"Error loading live equity: {e}")
-        
-        # Fall back to equity curve if no live state
-        elif equity_curve:
-            initial = equity_curve[0]['equity']
-            current = equity_curve[-1]['equity']
-            metrics['current_equity'] = current
-            metrics['total_return'] = current - initial
-            metrics['total_return_pct'] = ((current - initial) / initial) * 100
-        
-        # Trade statistics
-        if trades:
-            wins = [t for t in trades if t['pnl_pct'] > 0]
-            losses = [t for t in trades if t['pnl_pct'] <= 0]
-            
-            metrics['win_rate'] = (len(wins) / len(trades)) * 100 if trades else 0
-            metrics['avg_win'] = np.mean([t['pnl_pct'] for t in wins]) if wins else 0
-            metrics['avg_loss'] = np.mean([t['pnl_pct'] for t in losses]) if losses else 0
-        
-        # Max drawdown and Sharpe
+        # Win rate from trades with P&L data
+        pnl_trades = [t for t in trades if "pnl_pct" in t and t.get("pnl_pct", 0) != 0]
+        if pnl_trades:
+            wins = sum(1 for t in pnl_trades if t["pnl_pct"] > 0)
+            metrics["win_rate"] = (wins / len(pnl_trades)) * 100
+
         if len(equity_curve) > 1:
-            equity_series = pd.Series([e['equity'] for e in equity_curve])
-            running_max = equity_series.cummax()
-            drawdown = (equity_series - running_max) / running_max
-            metrics['max_drawdown'] = abs(drawdown.min()) * 100
-            
-            returns = equity_series.pct_change().dropna()
-            if len(returns) > 0 and returns.std() > 0:
-                metrics['sharpe_ratio'] = (returns.mean() / returns.std()) * np.sqrt(252)
-        
+            eq = pd.Series([e["equity"] for e in equity_curve])
+            dd = (eq - eq.cummax()) / eq.cummax()
+            metrics["max_drawdown"] = abs(dd.min()) * 100
+            rets = eq.pct_change().dropna()
+            if len(rets) > 0 and rets.std() > 0:
+                metrics["sharpe_ratio"] = (rets.mean() / rets.std()) * np.sqrt(252)
         return metrics
-    
+
+    # ── HTML Builder ──────────────────────────────────────────────────────
+
     def _build_html(
         self,
         positions: List[Dict],
-        equity_curve: List[Dict],
         trades: List[Dict],
-        metrics: Dict
+        account: Dict,
+        equity_curve: List[Dict],
+        metrics: Dict,
     ) -> str:
-        """Build the HTML dashboard"""
-        
-        # Encode data for JavaScript
-        equity_json = json.dumps(equity_curve)
-        positions_json = json.dumps(positions)
-        trades_json = json.dumps(trades[:50])  # Last 50 trades
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        
-        html = f"""<!DOCTYPE html>
+        """Build the self-updating HTML dashboard"""
+
+        data_blob = json.dumps({
+            "positions": positions,
+            "trades": trades,
+            "account": account,
+            "equity_curve": equity_curve,
+            "metrics": metrics,
+            "generated_utc": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -258,261 +234,537 @@ class DashboardGenerator:
     <title>Quant Trading Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{ 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #0d1117;
-            color: #c9d1d9;
-            padding: 20px;
-        }}
-        .container {{ max-width: 1400px; margin: 0 auto; }}
-        h1 {{ 
-            font-size: 2em; 
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }}
-        .timestamp {{
-            color: #8b949e;
-            font-size: 0.9em;
-            margin-bottom: 30px;
-        }}
-        .metrics-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }}
-        .metric-card {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 20px;
-        }}
-        .metric-label {{ color: #8b949e; font-size: 0.85em; margin-bottom: 8px; }}
-        .metric-value {{ font-size: 1.8em; font-weight: 600; }}
-        .positive {{ color: #3fb950; }}
-        .negative {{ color: #f85149; }}
-        .section {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 25px;
-            margin-bottom: 25px;
-        }}
-        .section-title {{ font-size: 1.3em; margin-bottom: 20px; font-weight: 600; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th {{ 
-            text-align: left; 
-            padding: 12px; 
-            border-bottom: 2px solid #30363d;
-            color: #8b949e;
-            font-weight: 500;
-            font-size: 0.9em;
-        }}
-        td {{ padding: 12px; border-bottom: 1px solid #21262d; }}
-        .badge {{
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            font-weight: 500;
-        }}
-        .badge-long {{ background: #238636; color: #fff; }}
-        .badge-short {{ background: #da3633; color: #fff; }}
-        #equityChart {{ max-height: 400px; }}
+{_CSS}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📈 Quant Trading Dashboard</h1>
-        <div class="timestamp">Last Updated: {timestamp}</div>
-        
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="metric-label">Portfolio Value</div>
-                <div class="metric-value">${metrics['current_equity']:,.2f}</div>
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>Quant Trading Dashboard</h1>
+                <div class="subtitle">Mean Reversion Strategy &middot; Alpaca Paper Trading</div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Total Return</div>
-                <div class="metric-value {'positive' if metrics['total_return'] > 0 else 'negative'}">
-                    {metrics['total_return_pct']:+.2f}%
-                </div>
+            <div class="header-right">
+                <div id="market-status" class="market-badge">Loading...</div>
+                <div id="last-update" class="timestamp"></div>
+                <div id="refresh-countdown" class="timestamp"></div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Win Rate</div>
-                <div class="metric-value">{metrics['win_rate']:.1f}%</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Total Trades</div>
-                <div class="metric-value">{metrics['total_trades']}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Sharpe Ratio</div>
-                <div class="metric-value">{metrics['sharpe_ratio']:.2f}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Max Drawdown</div>
-                <div class="metric-value negative">{metrics['max_drawdown']:.2f}%</div>
-            </div>
-        </div>
-        
+        </header>
+
+        <!-- Account Summary Cards -->
+        <div class="metrics-grid" id="metrics-grid"></div>
+
+        <!-- Positions -->
         <div class="section">
-            <div class="section-title">Open Positions ({len(positions)})</div>
-            <div id="positions-container">
-                {'<p style="color: #8b949e;">No open positions</p>' if not positions else ''}
+            <div class="section-header">
+                <div class="section-title">Open Positions</div>
+                <div id="price-status" class="price-status"></div>
             </div>
+            <div id="positions-table" class="table-wrap"></div>
         </div>
-        
+
+        <!-- Equity Curve -->
         <div class="section">
             <div class="section-title">Equity Curve</div>
-            <canvas id="equityChart"></canvas>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Recent Trades (Last 50)</div>
-            <div id="trades-container" style="overflow-x: auto;">
-                {'<p style="color: #8b949e;">No trades yet</p>' if not trades else ''}
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
             </div>
+            <p id="no-equity" class="muted" style="display:none;">
+                Equity curve data will appear after shadow replay or trading cycles.
+            </p>
         </div>
+
+        <!-- Recent Trades -->
+        <div class="section">
+            <div class="section-title">Recent Trades</div>
+            <div id="trades-table" class="table-wrap"></div>
+        </div>
+
+        <footer class="footer">
+            Dashboard data pushed after each trading cycle &middot;
+            Live prices fetched from Yahoo Finance on page load &middot;
+            <a href="https://github.com/Shimmy-Shams/Quant" target="_blank">GitHub</a>
+        </footer>
     </div>
-    
+
     <script>
-        // Data
-        const equityData = {equity_json};
-        const positionsData = {positions_json};
-        const tradesData = {trades_json};
-        
-        // Render positions table
-        if (positionsData.length > 0) {{
-            const posHtml = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Qty</th>
-                            <th>Entry</th>
-                            <th>Current</th>
-                            <th>P&L</th>
-                            <th>P&L %</th>
-                            <th>Entry Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${{positionsData.map(p => `
-                            <tr>
-                                <td><strong>${{p.symbol}}</strong></td>
-                                <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
-                                <td>${{p.qty}}</td>
-                                <td>$$${{p.entry_price.toFixed(2)}}</td>
-                                <td>$$${{p.current_price.toFixed(2)}}</td>
-                                <td class="${{p.pnl >= 0 ? 'positive' : 'negative'}}">$$${{p.pnl.toFixed(2)}}</td>
-                                <td class="${{p.pnl_pct >= 0 ? 'positive' : 'negative'}}">${{p.pnl_pct >= 0 ? '+' : ''}}${{p.pnl_pct.toFixed(2)}}%</td>
-                                <td>${{p.entry_date}}</td>
-                            </tr>
-                        `).join('')}}
-                    </tbody>
-                </table>
-            `;
-            document.getElementById('positions-container').innerHTML = posHtml;
+    // ── Embedded server-side data ─────────────────────────────────────────
+    const DATA = {data_blob};
+
+    // ── Configuration ─────────────────────────────────────────────────────
+    const REFRESH_INTERVAL = 30;          // seconds between price refreshes
+    const INITIAL_CAPITAL   = 1000000;
+    const CORS_PROXIES = [
+        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+        url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    ];
+
+    let countdown = REFRESH_INTERVAL;
+    let liveQuotes = {{}};  // symbol -> quote data
+
+    // ── Utilities ─────────────────────────────────────────────────────────
+    const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {{minimumFractionDigits:d, maximumFractionDigits:d}});
+    const fmtD = (v)      => v == null ? '—' : '$' + fmt(v);
+    const fmtP = (v)      => v == null ? '—' : (v >= 0 ? '+' : '') + fmt(v) + '%';
+    const cls  = (v)      => v >= 0 ? 'positive' : 'negative';
+
+    // ── Yahoo Finance live price fetcher ──────────────────────────────────
+    async function fetchLiveQuotes(symbols) {{
+        if (!symbols.length) return {{}};
+        const symStr = symbols.join(',');
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${{symStr}}`;
+
+        for (const makeProxy of CORS_PROXIES) {{
+            try {{
+                const resp = await fetch(makeProxy(url), {{ signal: AbortSignal.timeout(8000) }});
+                if (!resp.ok) continue;
+                const json = await resp.json();
+                const results = json?.quoteResponse?.result;
+                if (!results) continue;
+                const out = {{}};
+                for (const q of results) {{
+                    out[q.symbol] = {{
+                        price:           q.regularMarketPrice,
+                        change:          q.regularMarketChange,
+                        changePct:       q.regularMarketChangePercent,
+                        marketState:     q.marketState,
+                        prePrice:        q.preMarketPrice,
+                        preChange:       q.preMarketChange,
+                        preChangePct:    q.preMarketChangePercent,
+                        postPrice:       q.postMarketPrice,
+                        postChange:      q.postMarketChange,
+                        postChangePct:   q.postMarketChangePercent,
+                        name:            q.shortName || q.symbol,
+                    }};
+                }}
+                return out;
+            }} catch (e) {{
+                console.warn('Proxy failed:', e.message);
+            }}
         }}
-        
-        // Render trades table
-        if (tradesData.length > 0) {{
-            const tradesHtml = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Entry Date</th>
-                            <th>Exit Date</th>
-                            <th>Days</th>
-                            <th>P&L %</th>
-                            <th>Exit Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${{tradesData.map(t => `
-                            <tr>
-                                <td><strong>${{t.symbol}}</strong></td>
-                                <td><span class="badge badge-${{t.side}}">${{t.side.toUpperCase()}}</span></td>
-                                <td>${{t.entry_date}}</td>
-                                <td>${{t.exit_date}}</td>
-                                <td>${{t.holding_days}}</td>
-                                <td class="${{t.pnl_pct >= 0 ? 'positive' : 'negative'}}">${{t.pnl_pct >= 0 ? '+' : ''}}${{t.pnl_pct.toFixed(2)}}%</td>
-                                <td style="font-size: 0.9em; color: #8b949e;">${{t.exit_reason}}</td>
-                            </tr>
-                        `).join('')}}
-                    </tbody>
-                </table>
-            `;
-            document.getElementById('trades-container').innerHTML = tradesHtml;
+        return {{}};
+    }}
+
+    // ── Render helpers ────────────────────────────────────────────────────
+
+    function renderMetrics() {{
+        const m = DATA.metrics;
+        const a = DATA.account;
+        const pv = livePortfolioValue();
+
+        const cards = [
+            {{ label: 'Portfolio Value', value: fmtD(pv), cls: '' }},
+            {{ label: 'Cash', value: fmtD(a.cash), cls: '' }},
+            {{ label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) }},
+            {{ label: 'Open Positions', value: DATA.positions.length, cls: '' }},
+            {{ label: 'Trades Executed', value: m.total_trades, cls: '' }},
+            {{ label: 'Sharpe Ratio', value: fmt(m.sharpe_ratio), cls: m.sharpe_ratio >= 0 ? 'positive' : 'negative' }},
+        ];
+
+        document.getElementById('metrics-grid').innerHTML = cards.map(c => `
+            <div class="metric-card">
+                <div class="metric-label">${{c.label}}</div>
+                <div class="metric-value ${{c.cls}}">${{c.value}}</div>
+            </div>
+        `).join('');
+    }}
+
+    function livePortfolioValue() {{
+        let positionValue = 0;
+        for (const p of DATA.positions) {{
+            const q = liveQuotes[p.symbol];
+            const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+            positionValue += curPrice * Math.abs(p.qty);
         }}
-        
-        // Equity curve chart
-        if (equityData.length > 0) {{
-            const ctx = document.getElementById('equityChart').getContext('2d');
-            new Chart(ctx, {{
-                type: 'line',
-                data: {{
-                    labels: equityData.map(d => d.date),
-                    datasets: [{{
-                        label: 'Equity',
-                        data: equityData.map(d => d.equity),
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {{
-                        legend: {{ display: false }},
-                        tooltip: {{
-                            backgroundColor: '#161b22',
-                            borderColor: '#30363d',
-                            borderWidth: 1,
-                            callbacks: {{
-                                label: (context) => `Equity: $$${{context.parsed.y.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}})}}`
-                            }}
-                        }}
-                    }},
-                    scales: {{
-                        y: {{
-                            grid: {{ color: '#21262d' }},
-                            ticks: {{ 
-                                color: '#8b949e',
-                                callback: (value) => '$' + value.toLocaleString()
-                            }}
-                        }},
-                        x: {{
-                            grid: {{ color: '#21262d' }},
-                            ticks: {{ 
-                                color: '#8b949e',
-                                maxRotation: 45,
-                                minRotation: 45
-                            }}
+        if (Object.keys(liveQuotes).length > 0 && DATA.positions.length > 0) {{
+            return DATA.account.cash + positionValue;
+        }}
+        return DATA.account.portfolio_value || INITIAL_CAPITAL;
+    }}
+
+    function effectivePrice(symbol, quote) {{
+        if (!quote) return null;
+        const state = quote.marketState;
+        if (state === 'POST' && quote.postPrice) return quote.postPrice;
+        if (state === 'PRE'  && quote.prePrice)  return quote.prePrice;
+        return quote.price;
+    }}
+
+    function renderPositions() {{
+        const positions = DATA.positions;
+        if (!positions.length) {{
+            document.getElementById('positions-table').innerHTML =
+                '<p class="muted">No open positions</p>';
+            return;
+        }}
+
+        let rows = '';
+        let totalPnl = 0;
+        for (const p of positions) {{
+            const q = liveQuotes[p.symbol];
+            const livePrice = effectivePrice(p.symbol, q);
+            const curPrice = livePrice || p.current_price;
+            const pnl = p.side === 'short'
+                ? (p.entry_price - curPrice) * Math.abs(p.qty)
+                : (curPrice - p.entry_price) * Math.abs(p.qty);
+            const pnlPct = (pnl / (p.entry_price * Math.abs(p.qty))) * 100;
+            totalPnl += pnl;
+
+            let ahBadge = '';
+            if (q) {{
+                const state = q.marketState;
+                if (state === 'POST' && q.postPrice) {{
+                    ahBadge = `<div class="ah-badge">AH $$${{fmt(q.postPrice)}} <span class="${{cls(q.postChangePct)}}">${{fmtP(q.postChangePct)}}</span></div>`;
+                }} else if (state === 'PRE' && q.prePrice) {{
+                    ahBadge = `<div class="ah-badge">PM $$${{fmt(q.prePrice)}} <span class="${{cls(q.preChangePct)}}">${{fmtP(q.preChangePct)}}</span></div>`;
+                }} else if (state === 'REGULAR') {{
+                    ahBadge = `<div class="ah-badge live-dot">LIVE</div>`;
+                }}
+            }}
+
+            rows += `<tr>
+                <td>
+                    <strong>${{p.symbol}}</strong>
+                    ${{q ? `<div class="stock-name">${{q.name || ''}}</div>` : ''}}
+                </td>
+                <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
+                <td>${{Math.abs(p.qty)}}</td>
+                <td>$$${{fmt(p.entry_price)}}</td>
+                <td>
+                    $$${{fmt(curPrice)}}
+                    ${{ahBadge}}
+                </td>
+                <td class="${{cls(pnl)}}">$$${{fmt(pnl)}}</td>
+                <td class="${{cls(pnlPct)}}">${{fmtP(pnlPct)}}</td>
+            </tr>`;
+        }}
+
+        document.getElementById('positions-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Entry</th><th>Current</th><th>P&amp;L</th><th>P&amp;L %</th>
+                </tr></thead>
+                <tbody>${{rows}}</tbody>
+                <tfoot><tr>
+                    <td colspan="5" style="text-align:right;font-weight:600;">Total Unrealized P&amp;L</td>
+                    <td class="${{cls(totalPnl)}}" style="font-weight:600;">$$${{fmt(totalPnl)}}</td>
+                    <td></td>
+                </tr></tfoot>
+            </table>`;
+    }}
+
+    function renderTrades() {{
+        const trades = DATA.trades;
+        if (!trades.length) {{
+            document.getElementById('trades-table').innerHTML =
+                '<p class="muted">No trades yet</p>';
+            return;
+        }}
+        let rows = trades.map(t => `
+            <tr>
+                <td><strong>${{t.symbol}}</strong></td>
+                <td><span class="badge badge-${{t.side}}">${{t.side.toUpperCase()}}</span></td>
+                <td>${{t.qty}}</td>
+                <td>$$${{fmt(t.price)}}</td>
+                <td>${{t.date}}</td>
+                <td>${{t.pnl_pct != null ? `<span class="${{cls(t.pnl_pct)}}">${{fmtP(t.pnl_pct)}}</span>` : '—'}}</td>
+                <td><span class="badge badge-filled">${{t.status}}</span></td>
+            </tr>
+        `).join('');
+
+        document.getElementById('trades-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Price</th><th>Date</th><th>P&amp;L</th><th>Status</th>
+                </tr></thead>
+                <tbody>${{rows}}</tbody>
+            </table>`;
+    }}
+
+    function renderEquityChart() {{
+        const eq = DATA.equity_curve;
+        if (!eq.length) {{
+            document.getElementById('no-equity').style.display = 'block';
+            return;
+        }}
+        const ctx = document.getElementById('equityChart').getContext('2d');
+        new Chart(ctx, {{
+            type: 'line',
+            data: {{
+                labels: eq.map(d => d.date),
+                datasets: [{{
+                    label: 'Equity',
+                    data: eq.map(d => d.equity),
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102,126,234,0.08)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{ display: false }},
+                    tooltip: {{
+                        backgroundColor: '#161b22',
+                        borderColor: '#30363d',
+                        borderWidth: 1,
+                        callbacks: {{
+                            label: ctx => 'Equity: $' + ctx.parsed.y.toLocaleString(undefined, {{minimumFractionDigits:2}})
                         }}
                     }}
+                }},
+                scales: {{
+                    y: {{
+                        grid: {{ color: '#21262d' }},
+                        ticks: {{ color: '#8b949e', callback: v => '$' + v.toLocaleString() }}
+                    }},
+                    x: {{
+                        grid: {{ color: '#21262d' }},
+                        ticks: {{ color: '#8b949e', maxRotation: 45, autoSkipPadding: 20 }}
+                    }}
                 }}
-            }});
+            }}
+        }});
+    }}
+
+    function renderMarketStatus() {{
+        const anyQuote = Object.values(liveQuotes)[0];
+        const el = document.getElementById('market-status');
+        if (!anyQuote) {{
+            el.textContent = 'Prices: cached';
+            el.className = 'market-badge closed';
+            return;
         }}
+        const state = anyQuote.marketState;
+        const labels = {{ REGULAR: 'Market Open', PRE: 'Pre-Market', POST: 'After Hours', CLOSED: 'Market Closed', PREPRE: 'Pre-Market', POSTPOST: 'After Hours' }};
+        el.textContent = labels[state] || state;
+        el.className = 'market-badge ' + (state === 'REGULAR' ? 'open' : state === 'CLOSED' ? 'closed' : 'extended');
+    }}
+
+    function updateTimestamps() {{
+        document.getElementById('last-update').textContent =
+            'Data snapshot: ' + DATA.generated_utc + ' UTC';
+    }}
+
+    // ── Main loop ─────────────────────────────────────────────────────────
+
+    async function refreshPrices() {{
+        const symbols = DATA.positions.map(p => p.symbol);
+        if (symbols.length === 0) return;
+
+        document.getElementById('price-status').textContent = 'Fetching live prices...';
+        const quotes = await fetchLiveQuotes(symbols);
+        if (Object.keys(quotes).length > 0) {{
+            liveQuotes = quotes;
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot">&#9679;</span> Live prices (auto-refresh every 30s)';
+        }} else {{
+            document.getElementById('price-status').textContent = 'Using cached prices (live fetch unavailable)';
+        }}
+
+        renderPositions();
+        renderMetrics();
+        renderMarketStatus();
+    }}
+
+    function startCountdown() {{
+        setInterval(() => {{
+            countdown--;
+            const el = document.getElementById('refresh-countdown');
+            if (countdown <= 0) {{
+                countdown = REFRESH_INTERVAL;
+                el.textContent = 'Refreshing...';
+                refreshPrices();
+            }} else {{
+                el.textContent = `Next refresh: ${{countdown}}s`;
+            }}
+        }}, 1000);
+    }}
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    (async function init() {{
+        updateTimestamps();
+        renderMetrics();
+        renderPositions();
+        renderTrades();
+        renderEquityChart();
+
+        await refreshPrices();
+        startCountdown();
+    }})();
     </script>
 </body>
 </html>"""
-        return html
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# CSS (kept separate for readability)
+# ══════════════════════════════════════════════════════════════════════════
+
+_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 24px;
+    line-height: 1.5;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+.header h1 {
+    font-size: 1.8em;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.subtitle { color: #8b949e; font-size: 0.95em; margin-top: 4px; }
+.header-right { text-align: right; }
+.timestamp { color: #8b949e; font-size: 0.85em; margin-top: 4px; }
+
+/* Market status badge */
+.market-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.market-badge.open     { background: #238636; color: #fff; }
+.market-badge.closed   { background: #30363d; color: #8b949e; }
+.market-badge.extended { background: #9e6a03; color: #fff; }
+
+/* Metric cards */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+}
+.metric-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s;
+}
+.metric-card:hover { border-color: #667eea; }
+.metric-label { color: #8b949e; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.metric-value { font-size: 1.6em; font-weight: 700; }
+
+/* Positive / Negative */
+.positive { color: #3fb950; }
+.negative { color: #f85149; }
+
+/* Sections */
+.section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.section-title { font-size: 1.2em; font-weight: 600; margin-bottom: 16px; }
+.section-header .section-title { margin-bottom: 0; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid #30363d;
+    color: #8b949e;
+    font-weight: 500;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+td { padding: 10px 14px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+tbody tr:hover { background: rgba(102,126,234,0.04); }
+tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px; }
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.badge-long   { background: #238636; color: #fff; }
+.badge-short  { background: #da3633; color: #fff; }
+.badge-buy    { background: #238636; color: #fff; }
+.badge-sell   { background: #da3633; color: #fff; }
+.badge-filled { background: #1f6feb; color: #fff; }
+.badge-closed { background: #30363d; color: #8b949e; }
+
+/* After-hours info */
+.ah-badge {
+    font-size: 0.8em;
+    color: #d29922;
+    margin-top: 2px;
+}
+.stock-name { font-size: 0.78em; color: #8b949e; }
+
+/* Live dot */
+.live-dot { color: #3fb950; }
+.live-dot::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #3fb950; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Price status */
+.price-status { font-size: 0.85em; color: #8b949e; }
+
+/* Chart */
+.chart-container { height: 350px; position: relative; }
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #484f58;
+    font-size: 0.82em;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #21262d;
+}
+.footer a { color: #667eea; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+.muted { color: #484f58; font-style: italic; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { padding: 12px; }
+    .header { flex-direction: column; }
+    .header-right { text-align: left; }
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .metric-value { font-size: 1.3em; }
+}
+"""
 
 
 if __name__ == "__main__":
-    # Test generator
-    from pathlib import Path
     project_root = Path(__file__).parent.parent
     generator = DashboardGenerator(project_root)
     output = project_root / "docs" / "index.html"

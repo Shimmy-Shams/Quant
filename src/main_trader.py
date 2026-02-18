@@ -632,8 +632,9 @@ def main():
     global SHUTDOWN_REQUESTED
 
     args = parse_args()
+
+    # ── Dashboard-only mode: refresh state + generate + push, then exit ──
     if args.update_dashboard_only:
-        # Only update dashboard, do not run trading logic
         log_dir = PROJECT_ROOT / "data" / "logs"
         setup_logging(log_dir, "INFO")
         alpaca_config = AlpacaConfig.from_env()
