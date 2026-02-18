@@ -938,7 +938,24 @@ class DashboardGenerator:
         if (Object.keys(quotes).length > 0) {{
             // Track price changes for flash animation
             for (const sym of Object.keys(quotes)) {{
-                if (liveQuotes[sym]) lastPrices[sym] = liveQuotes[sym].price;
+                if (liveQuotes[sym]) lastPrices[sym] = effectivePrice(sym, liveQuotes[sym]);
+            }}
+            // Merge: client-side quotes update price/change/volume,
+            // but keep server's marketState/prePrice/postPrice if client lacks them
+            const serverQ = DATA.server_quotes || {{}};
+            for (const sym of Object.keys(quotes)) {{
+                const cq = quotes[sym];
+                const sq = serverQ[sym] || liveQuotes[sym] || {{}};
+                // If client has no valid marketState, inherit from server
+                const cState = (cq.marketState || '').toUpperCase();
+                if (!cState || cState === 'UNKNOWN') {{
+                    cq.marketState = sq.marketState || 'UNKNOWN';
+                }}
+                // Inherit pre/post prices from server if client lacks them
+                if (!cq.prePrice  && sq.prePrice)  {{ cq.prePrice = sq.prePrice; cq.preChange = sq.preChange; cq.preChangePct = sq.preChangePct; }}
+                if (!cq.postPrice && sq.postPrice) {{ cq.postPrice = sq.postPrice; cq.postChange = sq.postChange; cq.postChangePct = sq.postChangePct; }}
+                // Keep server name if client has a generic one
+                if ((!cq.name || cq.name === sym) && sq.name) cq.name = sq.name;
             }}
             liveQuotes = quotes;
             document.getElementById('price-status').innerHTML =
