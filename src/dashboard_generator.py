@@ -408,16 +408,19 @@ class DashboardGenerator:
             <div id="watchlist-info"></div>
         </div>
 
-        <!-- Equity Curve -->
-        <div class="section">
-            <div class="section-header">
-                <div class="section-title">Equity Curve</div>
+        <!-- Equity Curve (Broker-style) -->
+        <div class="section equity-section">
+            <div class="equity-header">
+                <div class="equity-header-left">
+                    <div id="equity-value" class="equity-value">$0.00</div>
+                    <div id="equity-change" class="equity-change"></div>
+                </div>
                 <div id="equity-range-toggle" class="toggle-group">
-                    <button class="toggle-btn active" data-range="all" onclick="setEquityRange('all')">All</button>
-                    <button class="toggle-btn" data-range="1y" onclick="setEquityRange('1y')">1Y</button>
-                    <button class="toggle-btn" data-range="3m" onclick="setEquityRange('3m')">3M</button>
-                    <button class="toggle-btn" data-range="1m" onclick="setEquityRange('1m')">1M</button>
                     <button class="toggle-btn" data-range="1d" onclick="setEquityRange('1d')">1D</button>
+                    <button class="toggle-btn" data-range="1m" onclick="setEquityRange('1m')">1M</button>
+                    <button class="toggle-btn" data-range="3m" onclick="setEquityRange('3m')">3M</button>
+                    <button class="toggle-btn" data-range="1y" onclick="setEquityRange('1y')">1Y</button>
+                    <button class="toggle-btn active" data-range="all" onclick="setEquityRange('all')">All</button>
                 </div>
             </div>
             <div class="chart-container chart-lg">
@@ -853,7 +856,21 @@ class DashboardGenerator:
             </table>`;
     }}
 
+    // ── Intraday equity accumulator (dense, every 5s refresh) ──────────
+    let intradayEquity = [];  // dense intra-day points for 1D view
+
     function getEquityDataForRange(range) {{
+        // For 1D, use intraday array if we have points
+        if (range === '1d') {{
+            if (intradayEquity.length > 0) {{
+                return intradayEquity.map(p => ({{
+                    date: p.time.toLocaleTimeString('en-US', {{hour:'numeric', minute:'2-digit'}}),
+                    equity: p.equity,
+                    isLive: true,
+                }}));
+            }}
+        }}
+
         const eq = DATA.equity_curve;
         if (!eq.length) return [];
         if (range === 'all') return eq;
@@ -868,7 +885,6 @@ class DashboardGenerator:
             default:   return eq;
         }}
         return eq.filter(d => {{
-            // Live points always included; use isoDate for accurate parsing
             if (d.isLive) return true;
             const dt = new Date(d.isoDate || d.date);
             return !isNaN(dt) && dt >= cutoff;
@@ -877,11 +893,42 @@ class DashboardGenerator:
 
     function setEquityRange(range) {{
         currentEquityRange = range;
-        // Update toggle buttons
         document.querySelectorAll('#equity-range-toggle .toggle-btn').forEach(b => {{
             b.classList.toggle('active', b.dataset.range === range);
         }});
         renderEquityChart();
+    }}
+
+    // ── Crosshair / vertical-line plugin ──────────────────────────────────
+    const crosshairPlugin = {{
+        id: 'crosshairLine',
+        afterDraw(chart) {{
+            if (chart._crosshairX == null) return;
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(chart._crosshairX, yAxis.top);
+            ctx.lineTo(chart._crosshairX, yAxis.bottom);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(139,148,158,0.5)';
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.restore();
+        }}
+    }};
+
+    function updateEquityHeader(currentVal, startVal) {{
+        const el = document.getElementById('equity-value');
+        const chEl = document.getElementById('equity-change');
+        el.textContent = '$' + currentVal.toLocaleString(undefined, {{minimumFractionDigits:2, maximumFractionDigits:2}});
+        const diff = currentVal - startVal;
+        const pct = startVal > 0 ? (diff / startVal) * 100 : 0;
+        const sign = diff >= 0 ? '+' : '';
+        const color = diff >= 0 ? '#3fb950' : '#f85149';
+        const rangeLabels = {{ '1d': 'Today', '1m': 'Past Month', '3m': 'Past 3 Months', '1y': 'Past Year', 'all': 'All Time' }};
+        chEl.innerHTML = `<span style="color:${{color}}">${{sign}}$$${{Math.abs(diff).toLocaleString(undefined,{{minimumFractionDigits:2,maximumFractionDigits:2}})}} (${{sign}}${{pct.toFixed(2)}}%)</span>  <span class="equity-range-label">${{rangeLabels[currentEquityRange] || ''}}</span>`;
+        el.style.color = color;
     }}
 
     function renderEquityChart() {{
@@ -892,51 +939,90 @@ class DashboardGenerator:
         }}
         document.getElementById('no-equity').style.display = 'none';
 
-        // Thin out data if too many points
+        // Thin large datasets
         let chartData = eq;
-        if (eq.length > 400) {{
-            const step = Math.ceil(eq.length / 400);
+        if (eq.length > 600) {{
+            const step = Math.ceil(eq.length / 600);
             chartData = eq.filter((_, i) => i % step === 0 || i === eq.length - 1);
         }}
 
+        const values = chartData.map(d => d.equity);
+        const labels = chartData.map(d => d.date);
+        const startVal = values[0];
+        const endVal   = values[values.length - 1];
+        const isUp = endVal >= startVal;
+
+        // Dynamic colors
+        const lineColor = isUp ? '#3fb950' : '#f85149';
+        const fillColor = isUp ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)';
+
+        // Update P&L header
+        updateEquityHeader(endVal, startVal);
+
         const ctx = document.getElementById('equityChart').getContext('2d');
+
+        // Reference line (starting equity)
+        const refLinePlugin = {{
+            id: 'refLine',
+            beforeDraw(chart) {{
+                const yAxis = chart.scales.y;
+                const xAxis = chart.scales.x;
+                const yPixel = yAxis.getPixelForValue(startVal);
+                if (yPixel < yAxis.top || yPixel > yAxis.bottom) return;
+                const cctx = chart.ctx;
+                cctx.save();
+                cctx.beginPath();
+                cctx.moveTo(xAxis.left, yPixel);
+                cctx.lineTo(xAxis.right, yPixel);
+                cctx.lineWidth = 1;
+                cctx.strokeStyle = 'rgba(139,148,158,0.3)';
+                cctx.setLineDash([6, 4]);
+                cctx.stroke();
+                cctx.restore();
+            }}
+        }};
+
+        // Gradient fill
+        const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.clientHeight);
+        gradient.addColorStop(0, isUp ? 'rgba(63,185,80,0.18)' : 'rgba(248,81,73,0.18)');
+        gradient.addColorStop(1, 'rgba(13,17,23,0)');
+
+        // Destroy previous chart and recreate (color/gradient changes require it)
         if (equityChart) {{
-            equityChart.data.labels = chartData.map(d => d.date);
-            equityChart.data.datasets[0].data = chartData.map(d => d.equity);
-            equityChart.update('none');
-            return;
+            equityChart.destroy();
+            equityChart = null;
         }}
 
         equityChart = new Chart(ctx, {{
             type: 'line',
             data: {{
-                labels: chartData.map(d => d.date),
+                labels: labels,
                 datasets: [{{
-                    label: 'Equity',
-                    data: chartData.map(d => d.equity),
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102,126,234,0.08)',
-                    borderWidth: 2,
+                    label: 'Portfolio Value',
+                    data: values,
+                    borderColor: lineColor,
+                    backgroundColor: gradient,
+                    borderWidth: 1.5,
                     fill: true,
                     tension: 0.3,
                     pointRadius: 0,
-                    pointHitRadius: 6,
+                    pointHitRadius: 8,
                 }}]
             }},
+            plugins: [refLinePlugin, crosshairPlugin],
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
+                interaction: {{
+                    mode: 'index',
+                    intersect: false,
+                }},
                 plugins: {{
                     legend: {{ display: false }},
                     tooltip: {{
-                        backgroundColor: '#161b22',
-                        borderColor: '#30363d',
-                        borderWidth: 1,
-                        callbacks: {{
-                            label: ctx => 'Equity: $' + ctx.parsed.y.toLocaleString(undefined, {{minimumFractionDigits:2}})
-                        }}
-                    }}
+                        enabled: false,  // we use the header instead
+                    }},
                 }},
                 scales: {{
                     y: {{
@@ -944,11 +1030,40 @@ class DashboardGenerator:
                         ticks: {{ color: '#8b949e', callback: v => '$' + v.toLocaleString() }}
                     }},
                     x: {{
-                        grid: {{ color: '#21262d' }},
-                        ticks: {{ color: '#8b949e', maxRotation: 45, autoSkipPadding: 20 }}
+                        grid: {{ display: false }},
+                        ticks: {{
+                            color: '#8b949e',
+                            maxRotation: 0,
+                            autoSkipPadding: 30,
+                            maxTicksLimit: 8,
+                        }}
                     }}
+                }},
+                onHover: (event, elements) => {{
+                    const chart = equityChart;
+                    if (!chart) return;
+                    const points = chart.getElementsAtEventForMode(event.native, 'index', {{intersect: false}}, false);
+                    if (points.length > 0) {{
+                        const idx = points[0].index;
+                        const hoverVal = values[idx];
+                        chart._crosshairX = points[0].element.x;
+                        updateEquityHeader(hoverVal, startVal);
+                    }} else {{
+                        chart._crosshairX = null;
+                        updateEquityHeader(endVal, startVal);
+                    }}
+                    chart.draw();
                 }}
             }}
+        }});
+
+        // Reset header on mouse leave
+        ctx.canvas.addEventListener('mouseleave', () => {{
+            if (equityChart) {{
+                equityChart._crosshairX = null;
+                equityChart.draw();
+            }}
+            updateEquityHeader(endVal, startVal);
         }});
     }}
 
@@ -1036,21 +1151,20 @@ class DashboardGenerator:
         const equity = livePortfolioValue();
         if (equity == null || equity <= 0) return;
 
-        // Full ISO date so range filters (1D, 1M, etc.) can parse it
         const now = new Date();
-        const iso = now.toISOString();                 // e.g. "2026-02-18T15:42:00.000Z"
-        const minuteKey = iso.slice(0, 16);            // e.g. "2026-02-18T15:42"
+        const iso = now.toISOString();
+        const minuteKey = iso.slice(0, 16);
 
-        // Don't push if equity hasn't changed since last append
+        // Always push to intradayEquity (dense, for 1D chart)
+        intradayEquity.push({{ time: now, equity: equity }});
+
+        // Don't push duplicate flat values to the main equity_curve
         if (lastLiveEquity !== null && Math.abs(equity - lastLiveEquity) < 0.01) return;
         lastLiveEquity = equity;
 
-        // Display label: "Feb 18 15:42" — compact for chart axis
         const label = now.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }})
                     + ' ' + now.toLocaleTimeString('en-US', {{ hour: '2-digit', minute: '2-digit', hour12: false }});
 
-        // If the last point is a live point in the same minute, update in place.
-        // Otherwise append a new point (1 point per minute max).
         const eq = DATA.equity_curve;
         if (eq.length > 0 && eq[eq.length - 1].isLive) {{
             const lastKey = (eq[eq.length - 1].isoDate || '').slice(0, 16);
@@ -1243,6 +1357,34 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 /* Chart */
 .chart-container { height: 350px; position: relative; }
 .chart-container.chart-lg { height: 400px; }
+
+/* Broker-style equity header */
+.equity-section { padding-bottom: 16px; }
+.equity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.equity-header-left { min-width: 200px; }
+.equity-value {
+    font-size: 2.2em;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    transition: color 0.3s;
+}
+.equity-change {
+    font-size: 0.95em;
+    font-weight: 500;
+    margin-top: 2px;
+}
+.equity-range-label {
+    color: #8b949e;
+    font-size: 0.85em;
+    margin-left: 4px;
+}
 
 /* Watchlist dropdown */
 #watchlist-select {
