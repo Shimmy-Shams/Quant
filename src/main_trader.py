@@ -555,33 +555,58 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
             logger.info(f"✅ Dashboard generated: {output_path}")
             
             if auto_push:
-                # Git operations
+                # Push to dashboard-live branch (keeps main clean)
                 try:
-                    subprocess.run(
-                        ["git", "-C", str(PROJECT_ROOT), "add", "docs/index.html"],
-                        check=True, capture_output=True, timeout=10
+                    git = lambda *args, **kw: subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT)] + list(args),
+                        capture_output=True, timeout=kw.get("timeout", 15),
                     )
                     
+                    # Stash any working changes, switch to dashboard-live
+                    git("stash", "--include-untracked")
+                    
+                    # Ensure dashboard-live branch exists locally
+                    fetch_result = git("fetch", "origin", "dashboard-live", timeout=30)
+                    if fetch_result.returncode == 0:
+                        git("checkout", "dashboard-live")
+                        git("reset", "--hard", "origin/dashboard-live")
+                    else:
+                        # Branch doesn't exist yet — create orphan
+                        git("checkout", "--orphan", "dashboard-live")
+                        git("reset", "--hard")
+                    
+                    # Copy the generated dashboard into the branch
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    generator.generate(output_path)
+                    
+                    git("add", "docs/index.html")
                     commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
-                    result = subprocess.run(
-                        ["git", "-C", str(PROJECT_ROOT), "commit", "-m", commit_msg],
-                        capture_output=True, timeout=10
-                    )
+                    result = git("commit", "-m", commit_msg)
                     
-                    # Only push if there was something to commit
                     if result.returncode == 0:
-                        subprocess.run(
-                            ["git", "-C", str(PROJECT_ROOT), "push", "origin", "main"],
-                            check=True, capture_output=True, timeout=30
-                        )
-                        logger.info("✅ Dashboard pushed to GitHub")
+                        push_result = git("push", "origin", "dashboard-live", "--force", timeout=30)
+                        if push_result.returncode == 0:
+                            logger.info("✅ Dashboard pushed to GitHub (dashboard-live branch)")
+                        else:
+                            logger.warning(f"⚠️  Git push failed: {push_result.stderr.decode()}")
                     else:
                         logger.info("ℹ️  No dashboard changes to commit")
+                    
+                    # Switch back to main
+                    git("checkout", "main")
+                    git("stash", "pop")
                         
                 except subprocess.TimeoutExpired:
                     logger.warning("⚠️  Git operation timed out")
-                except subprocess.CalledProcessError as e:
+                    git("checkout", "main")
+                    git("stash", "pop")
+                except Exception as e:
                     logger.warning(f"⚠️  Git push failed: {e}")
+                    try:
+                        git("checkout", "main")
+                        git("stash", "pop")
+                    except Exception:
+                        pass
         else:
             logger.warning("⚠️  Dashboard generation failed")
             
