@@ -1,32 +1,66 @@
 {
-  "timestamp": "2026-02-17T07:23:45.000000",
+  "timestamp": "2026-02-18T10:03:58.207001",
   "mode": "live",
   "account": {
-    "equity": 999999.62,
-    "cash": 999975.33,
-    "portfolio_value": 999999.62,
-    "buying_power": 1999950.66
+    "equity": 999569.27,
+    "cash": 903911.76,
+    "portfolio_value": 999569.27,
+    "buying_power": 1903456.24
   },
   "positions": [
     {
+      "symbol": "CRWD",
+      "qty": 232,
+      "side": "long",
+      "entry_price": 413.960733,
+      "current_price": 412.21,
+      "market_value": 95632.72,
+      "unrealized_pl": -406.170056,
+      "unrealized_plpc": -0.42300000000000004
+    },
+    {
       "symbol": "ETHUSD",
       "qty": 0,
-      "side": "long",
-      "entry_price": 1970.17,
-      "current_price": 1970.17,
-      "market_value": 24.29,
-      "unrealized_pl": -0.10,
-      "unrealized_plpc": -0.41
+      "side": "short",
+      "entry_price": 1989.4,
+      "current_price": 2016.83,
+      "market_value": 24.789364,
+      "unrealized_pl": 0.337149,
+      "unrealized_plpc": 1.379
     }
   ],
   "recent_trades": [
     {
-      "symbol": "ETHUSD",
+      "symbol": "CRWD",
       "side": "buy",
-      "qty": 0.01229,
-      "filled_price": 1970.17,
-      "submitted_at": "2026-02-17T02:18:39.123456Z",
-      "order_id": "abc123"
+      "qty": 232.0,
+      "filled_price": 413.960733,
+      "submitted_at": "2026-02-17 20:55:12.652854+00:00",
+      "order_id": "1233a398-167c-443f-a945-a43178db528f"
+    },
+    {
+      "symbol": "ETH/USD",
+      "side": "buy",
+      "qty": 0,
+      "filled_price": 1989.4,
+      "submitted_at": "2026-02-17 05:05:13.870385+00:00",
+      "order_id": "f06a36ef-790d-4fef-b40e-065e057fdc80"
+    },
+    {
+      "symbol": "BTC/USD",
+      "side": "sell",
+      "qty": 0.000356827,
+      "filled_price": 68441.72,
+      "submitted_at": "2026-02-17 05:04:50.673606+00:00",
+      "order_id": "57b85530-4714-4ff5-a354-3a3e34645bee"
+    },
+    {
+      "symbol": "BTC/USD",
+      "side": "buy",
+      "qty": 0,
+      "filled_price": 68504.9,
+      "submitted_at": "2026-02-17 05:04:40.679013+00:00",
+      "order_id": "daa098ed-8183-4392-9fc8-e73e04ed0125"
     }
   ]
 }

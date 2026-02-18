@@ -454,20 +454,6 @@ class DashboardGenerator:
     ];
 
     let countdown = REFRESH_INTERVAL;
-    // Seed with server-side quotes but override marketState with time-based values
-    let liveQuotes = {{}};
-    {{
-        const sq = DATA.server_quotes || {{}};
-        for (const sym of Object.keys(sq)) {{
-            liveQuotes[sym] = Object.assign({{}}, sq[sym], {{ marketState: getCurrentMarketState(sym) }});
-        }}
-    }}
-    let equityChart = null;
-    let activeWatchSymbol = null;
-    let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
-    let currentEquityRange = 'all';
-    let fetchCount = 0;
-    let lastPrices = {{}};  // track previous prices for flash animation
 
     // ── Time-based market state detection ──────────────────────────────────
     // Crypto symbols trade 24/7 and are always REGULAR
@@ -499,6 +485,21 @@ class DashboardGenerator:
         // Outside all sessions
         return 'CLOSED';
     }}
+
+    // Seed with server-side quotes but override marketState with time-based values
+    let liveQuotes = {{}};
+    {{
+        const sq = DATA.server_quotes || {{}};
+        for (const sym of Object.keys(sq)) {{
+            liveQuotes[sym] = Object.assign({{}}, sq[sym], {{ marketState: getCurrentMarketState(sym) }});
+        }}
+    }}
+    let equityChart = null;
+    let activeWatchSymbol = null;
+    let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
+    let currentEquityRange = 'all';
+    let fetchCount = 0;
+    let lastPrices = {{}};  // track previous prices for flash animation
 
     // ── Utilities ─────────────────────────────────────────────────────────
     const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {{minimumFractionDigits:d, maximumFractionDigits:d}});
