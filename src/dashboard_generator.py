@@ -1006,6 +1006,10 @@ class DashboardGenerator:
         renderMarketStatus();
         renderWatchlist();
         flashUpdatedCells();
+
+        // Append a live equity point from current portfolio value
+        appendLiveEquityPoint();
+        renderEquityChart();
     }}
 
     function flashUpdatedCells() {{
@@ -1017,6 +1021,39 @@ class DashboardGenerator:
                 setTimeout(() => el.classList.remove('price-flash'), 1200);
             }}
         }});
+    }}
+
+    // Track the last equity value we pushed to avoid duplicate flat points
+    let lastLiveEquity = null;
+
+    function appendLiveEquityPoint() {{
+        if (Object.keys(liveQuotes).length === 0) return;
+        const equity = livePortfolioValue();
+        if (equity == null || equity <= 0) return;
+
+        // Build a timestamp label (HH:MM format in local time)
+        const now = new Date();
+        const label = now.toLocaleTimeString('en-US', {{ hour: '2-digit', minute: '2-digit', hour12: false }});
+
+        // Don't push if equity hasn't changed since last append
+        if (lastLiveEquity !== null && Math.abs(equity - lastLiveEquity) < 0.01) return;
+        lastLiveEquity = equity;
+
+        // If the last point in equity_curve is a live point (has isLive flag),
+        // replace it so we don't accumulate hundreds of points per session.
+        // Keep max 1 live point per minute.
+        const eq = DATA.equity_curve;
+        if (eq.length > 0 && eq[eq.length - 1].isLive) {{
+            const lastLabel = eq[eq.length - 1].date;
+            // Same minute? Update in place. Different minute? Keep both.
+            if (lastLabel === label) {{
+                eq[eq.length - 1].equity = equity;
+            }} else {{
+                eq.push({{ date: label, equity: equity, isLive: true }});
+            }}
+        }} else {{
+            eq.push({{ date: label, equity: equity, isLive: true }});
+        }}
     }}
 
     function startCountdown() {{
