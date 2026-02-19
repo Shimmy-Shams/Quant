@@ -317,9 +317,11 @@ class DashboardGenerator:
                 with open(self.equity_history, "r") as f:
                     history = json.load(f)
                 for entry in history:
+                    ts = entry["timestamp"]  # "YYYY-MM-DD HH:MM"
                     equity_data.append({
-                        "date": entry["timestamp"],
+                        "date": ts,
                         "equity": float(entry["equity"]),
+                        "isoDate": ts.replace(" ", "T") + ":00",
                     })
                 if equity_data:
                     return equity_data
@@ -661,7 +663,7 @@ class DashboardGenerator:
         const cards = [
             {{ label: 'Portfolio Value', value: fmtD(pv), cls: '' }},
             {{ label: 'Cash', value: fmtD(a.cash), cls: '' }},
-            {{ label: 'Day P&L', value: fmtD(dayPnl), cls: cls(dayPnl) }},
+            {{ label: 'Total P&L', value: fmtD(pv - INITIAL_CAPITAL), cls: cls(pv - INITIAL_CAPITAL) }},
             {{ label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) }},
             {{ label: 'Open Positions', value: DATA.positions.length, cls: '' }},
             {{ label: 'Trades Executed', value: m.total_trades, cls: '' }},

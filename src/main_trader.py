@@ -255,6 +255,89 @@ def _save_shadow_state(sim: SimulationEngine) -> None:
         logger.info("No open positions — shadow state cleared")
 
 
+def _seed_equity_history(conn: AlpacaConnection) -> None:
+    """Backfill equity_history.json from Alpaca portfolio history API."""
+    equity_history_file = PROJECT_ROOT / "data" / "snapshots" / "equity_history.json"
+    equity_history_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Load existing history
+        history = []
+        if equity_history_file.exists():
+            with open(equity_history_file, "r") as f:
+                history = json.load(f)
+
+        existing_dates = {entry["timestamp"][:10] for entry in history}
+
+        # Fetch daily history from Alpaca (last 3 months)
+        alpaca_history = conn.get_portfolio_history(period="3M", timeframe="1D")
+
+        if not alpaca_history:
+            logger.info("No Alpaca portfolio history available for seeding")
+            return
+
+        # Add missing daily snapshots (end-of-day values)
+        added = 0
+        for point in alpaca_history:
+            date_str = point["timestamp"][:10]
+            if date_str not in existing_dates:
+                history.append(point)
+                existing_dates.add(date_str)
+                added += 1
+
+        if added > 0:
+            # Sort by timestamp
+            history.sort(key=lambda x: x["timestamp"])
+            history = history[-2000:]
+
+            with open(equity_history_file, "w") as f:
+                json.dump(history, f)
+
+            logger.info(
+                f"Seeded equity history: {added} new daily points from Alpaca API "
+                f"(total: {len(history)} points)"
+            )
+        else:
+            logger.info(
+                f"Equity history up to date ({len(history)} points)"
+            )
+
+    except Exception as e:
+        logger.warning(f"Could not seed equity history: {e}")
+
+
+def _post_close_refresh(conn: AlpacaConnection, push: bool) -> None:
+    """Full dashboard refresh at 4:05 PM ET with final closing data."""
+    import pytz
+    et = pytz.timezone("US/Eastern")
+    now_et = datetime.now(et)
+
+    # Target: 4:05 PM ET today
+    target = now_et.replace(hour=16, minute=5, second=0, microsecond=0)
+
+    if now_et >= target:
+        logger.info("Already past 4:05 PM ET — skipping post-close refresh")
+        return
+
+    wait_secs = (target - now_et).total_seconds()
+    if wait_secs > 1200:  # >20 min means daily cycle ran early — skip
+        logger.info(
+            f"Post-close refresh: {wait_secs:.0f}s until 4:05 PM ET — too far, skipping"
+        )
+        return
+
+    logger.info(f"Post-close refresh: waiting {wait_secs:.0f}s until 4:05 PM ET...")
+    _interruptible_sleep(wait_secs)
+
+    if SHUTDOWN_REQUESTED:
+        return
+
+    logger.info("Post-close refresh: capturing final closing data...")
+    _save_live_state(conn)
+    _generate_and_push_dashboard(push)
+    logger.info("Post-close refresh complete ✓")
+
+
 def _save_live_state(conn: AlpacaConnection) -> None:
     """Save live trading state for dashboard."""
     state_file = PROJECT_ROOT / "data" / "snapshots" / "live_state.json"
@@ -630,6 +713,9 @@ def main():
     conn = AlpacaConnection(alpaca_config)
     conn.test_connection()
 
+    # ── Seed equity history from Alpaca portfolio history ──
+    _seed_equity_history(conn)
+
     # ── Data adapter ──
     adapter = AlpacaDataAdapter(
         data_client=conn.data_client,
@@ -716,6 +802,10 @@ def main():
             # ── Generate Dashboard ──
             if not args.no_dashboard:
                 _generate_and_push_dashboard(args.push_dashboard)
+
+            # ── Post-close refresh at 4:05 PM ET (daily mode only) ──
+            if args.interval == 0 and not args.once and not args.no_dashboard:
+                _post_close_refresh(conn, args.push_dashboard)
 
             # ── Exit or sleep ──
             if args.once:

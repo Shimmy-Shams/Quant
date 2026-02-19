@@ -542,6 +542,47 @@ class AlpacaConnection:
             'filled_qty': float(order.filled_qty) if order.filled_qty else None,
         }
 
+    # ─── Portfolio History ──────────────────────────────────────────────
+
+    def get_portfolio_history(self, period: str = "3M", timeframe: str = "1D") -> List[Dict]:
+        """
+        Get portfolio equity history from Alpaca.
+
+        Args:
+            period: History period ('1D', '1W', '1M', '3M', '1A', 'all')
+            timeframe: Data granularity ('1Min', '5Min', '15Min', '1H', '1D')
+
+        Returns:
+            List of {'timestamp': 'YYYY-MM-DD HH:MM', 'equity': float} dicts
+        """
+        try:
+            from alpaca.trading.requests import GetPortfolioHistoryRequest
+
+            request = GetPortfolioHistoryRequest(
+                period=period,
+                timeframe=timeframe,
+            )
+            history = self.trading_client.get_portfolio_history(filter=request)
+
+            results = []
+            if history.timestamp and history.equity:
+                for ts, eq in zip(history.timestamp, history.equity):
+                    if eq is not None:
+                        dt = datetime.fromtimestamp(ts)
+                        results.append({
+                            "timestamp": dt.strftime("%Y-%m-%d %H:%M"),
+                            "equity": float(eq),
+                        })
+
+            self.logger.info(
+                f"Retrieved {len(results)} portfolio history points ({period}/{timeframe})"
+            )
+            return results
+
+        except Exception as e:
+            self.logger.warning(f"Could not get portfolio history: {e}")
+            return []
+
     # ─── Market Clock ──────────────────────────────────────────────────
 
     def get_clock(self) -> Dict:
