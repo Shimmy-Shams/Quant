@@ -562,7 +562,7 @@ class AlpacaConnection:
                 period=period,
                 timeframe=timeframe,
             )
-            history = self.trading_client.get_portfolio_history(filter=request)
+            history = self.trading_client.get_portfolio_history(history_filter=request)
 
             results = []
             if history.timestamp and history.equity:
