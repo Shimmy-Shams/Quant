@@ -544,6 +544,15 @@ class AlpacaConnection:
 
     # ─── Portfolio History ──────────────────────────────────────────────
 
+    def get_intraday_equity(self) -> List[Dict]:
+        """
+        Get today's intraday equity at 15-min intervals from Alpaca.
+
+        Returns:
+            List of {'timestamp': 'YYYY-MM-DD HH:MM', 'equity': float} dicts
+        """
+        return self.get_portfolio_history(period="1D", timeframe="15Min")
+
     def get_portfolio_history(self, period: str = "3M", timeframe: str = "1D") -> List[Dict]:
         """
         Get portfolio equity history from Alpaca.

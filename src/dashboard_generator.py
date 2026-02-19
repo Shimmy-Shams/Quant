@@ -172,6 +172,7 @@ class DashboardGenerator:
         self.shadow_state = self.data_dir / "snapshots" / "shadow_state.csv"
         self.live_state = self.data_dir / "snapshots" / "live_state.json"
         self.equity_history = self.data_dir / "snapshots" / "equity_history.json"
+        self.intraday_equity = self.data_dir / "snapshots" / "intraday_equity.json"
         self.trading_logs_dir = self.data_dir / "snapshots" / "trading_logs"
 
     def generate(self, output_path: Path) -> bool:
@@ -181,6 +182,7 @@ class DashboardGenerator:
             trades = self._load_trades()
             account = self._load_account()
             equity_curve = self._load_equity_curve()
+            intraday = self._load_intraday_equity()
             metrics = self._calculate_metrics(account, equity_curve, trades)
 
             # Fetch live quotes server-side (reliable, no CORS)
@@ -189,7 +191,7 @@ class DashboardGenerator:
             if server_quotes:
                 print(f"  Server-side quotes: {list(server_quotes.keys())}")
 
-            html = self._build_html(positions, trades, account, equity_curve, metrics, server_quotes)
+            html = self._build_html(positions, trades, account, equity_curve, metrics, server_quotes, intraday)
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html)
@@ -344,6 +346,26 @@ class DashboardGenerator:
 
         return sorted(equity_data, key=lambda x: x["date"])
 
+    def _load_intraday_equity(self) -> List[Dict]:
+        """Load intraday equity from intraday_equity.json (Alpaca 15-min data)"""
+        if not self.intraday_equity.exists():
+            return []
+        try:
+            with open(self.intraday_equity, "r") as f:
+                data = json.load(f)
+            # Convert to format the JS expects: {time: ISO string, equity: number}
+            result = []
+            for entry in data:
+                ts = entry["timestamp"]  # "YYYY-MM-DD HH:MM"
+                result.append({
+                    "time": ts.replace(" ", "T") + ":00",
+                    "equity": float(entry["equity"]),
+                })
+            return result
+        except Exception as e:
+            print(f"Error loading intraday equity: {e}")
+            return []
+
     def _calculate_metrics(self, account: Dict, equity_curve: List[Dict], trades: List[Dict]) -> Dict:
         """Calculate summary metrics"""
         initial_capital = 1_000_000.0  # Alpaca paper account
@@ -383,6 +405,7 @@ class DashboardGenerator:
         equity_curve: List[Dict],
         metrics: Dict,
         server_quotes: Optional[Dict] = None,
+        intraday_equity: Optional[List[Dict]] = None,
     ) -> str:
         """Build the self-updating HTML dashboard"""
 
@@ -391,6 +414,7 @@ class DashboardGenerator:
             "trades": trades,
             "account": account,
             "equity_curve": equity_curve,
+            "intraday_equity": intraday_equity or [],
             "metrics": metrics,
             "server_quotes": server_quotes or {},
             "generated_utc": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
@@ -929,7 +953,11 @@ class DashboardGenerator:
     }}
 
     // ── Intraday equity accumulator (dense, every 5s refresh) ──────────
-    let intradayEquity = [];  // dense intra-day points for 1D view
+    // Pre-populate from Alpaca 15-min portfolio history (so 1D chart works on fresh load)
+    let intradayEquity = (DATA.intraday_equity || []).map(p => ({{
+        time: new Date(p.time),
+        equity: p.equity,
+    }}));
 
     function getEquityDataForRange(range) {{
         // For 1D, use intraday array if we have points

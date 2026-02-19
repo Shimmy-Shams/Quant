@@ -422,6 +422,18 @@ def _save_live_state(conn: AlpacaConnection) -> None:
             logger.warning(f"Could not update equity history: {e}")
         
         logger.info(f"Live state saved ({len(positions)} positions, {len(trades)} trades)")
+
+        # ── Save intraday equity for dashboard 1D chart ──
+        try:
+            intraday = conn.get_intraday_equity()
+            if intraday:
+                intraday_file = PROJECT_ROOT / "data" / "snapshots" / "intraday_equity.json"
+                with open(intraday_file, "w") as f:
+                    json.dump(intraday, f)
+                logger.debug(f"Intraday equity saved ({len(intraday)} points)")
+        except Exception as e:
+            logger.warning(f"Could not save intraday equity: {e}")
+
     except Exception as e:
         logger.error(f"Failed to save live state: {e}")
 
