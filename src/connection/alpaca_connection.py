@@ -567,7 +567,7 @@ class AlpacaConnection:
             results = []
             if history.timestamp and history.equity:
                 for ts, eq in zip(history.timestamp, history.equity):
-                    if eq is not None:
+                    if eq is not None and eq > 0:
                         dt = datetime.fromtimestamp(ts)
                         results.append({
                             "timestamp": dt.strftime("%Y-%m-%d %H:%M"),
