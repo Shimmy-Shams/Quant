@@ -443,9 +443,15 @@ class AlpacaExecutor:
                     from data.earnings_calendar import EarningsCalendar
                     from pathlib import Path
                     _ec = EarningsCalendar(Path(__file__).resolve().parent.parent.parent)
-                    if _ec.has_upcoming_earnings(symbol, within_days=getattr(config, 'earnings_blackout_days', 2), reference_date=str(date.date())):
+                    _blackout_days = getattr(config, 'earnings_blackout_days', 2)
+                    if _ec.has_upcoming_earnings(symbol, within_days=_blackout_days, reference_date=str(date.date())):
+                        logger.info(
+                            f"⛔ EARNINGS BLACKOUT: skipping {symbol} — "
+                            f"earnings within {_blackout_days} days of {date.date()}"
+                        )
                         continue  # Earnings within blackout window
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Earnings check failed for {symbol}: {e}")
                     pass  # Fail open — don't block trade if calendar unavailable
 
             # Determine direction
@@ -494,8 +500,15 @@ class AlpacaExecutor:
                         penalty_floor=getattr(config, 'sentiment_penalty_floor', 0.5),
                         negative_threshold=getattr(config, 'sentiment_negative_threshold', -0.3),
                     )
-                    size_frac *= _ns.get_sentiment_multiplier(symbol)
-                except Exception:
+                    _mult = _ns.get_sentiment_multiplier(symbol)
+                    if _mult < 1.0:
+                        logger.info(
+                            f"📉 SENTIMENT PENALTY: {symbol} multiplier={_mult:.3f} "
+                            f"(size_frac {size_frac:.4f} → {size_frac * _mult:.4f})"
+                        )
+                    size_frac *= _mult
+                except Exception as e:
+                    logger.debug(f"Sentiment check failed for {symbol}: {e}")
                     pass  # Fail open — don't adjust if sentiment unavailable
 
             position_value = equity * size_frac
