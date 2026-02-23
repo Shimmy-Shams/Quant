@@ -410,6 +410,9 @@ class NewsSentiment:
             multipliers = multipliers - penalty_pct * (1.0 - self.penalty_floor)
             multipliers = multipliers.clip(lower=self.penalty_floor, upper=1.0)
 
+        # Fill NaN cells (from missing prices at start of series) with 1.0 (no penalty)
+        multipliers = multipliers.fillna(1.0)
+
         return multipliers
 
     # ─── Batch Operations ──────────────────────────────────────────────

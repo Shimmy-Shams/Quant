@@ -152,6 +152,9 @@ class BacktestResults:
     # Transaction costs
     total_commission: float = 0.0
 
+    # News filter diagnostics (populated when filters are enabled)
+    filter_diagnostics: Dict = field(default_factory=dict)
+
     def summary(self) -> Dict:
         """Return summary dict"""
         final_eq = self.equity_curve.iloc[-1] if len(self.equity_curve) > 0 else 0
@@ -364,6 +367,31 @@ class BacktestEngine:
             vol_sizes = np.full((n_days, n_syms), cfg.max_position_size)
 
         # --- Pre-compute news filters (Tier 1 + Tier 2) ---
+        # ── Diagnostic counters for news filters ──
+        _diag = {
+            "tier2_enabled": cfg.earnings_blackout_enabled,
+            "tier1_enabled": cfg.sentiment_penalty_enabled,
+            # Tier 2 pre-computation
+            "tier2_symbols_with_earnings": 0,
+            "tier2_total_earnings_dates": 0,
+            "tier2_blackout_day_count": 0,
+            "tier2_blackout_entries_total": 0,  # sum of |sym_set| across all days
+            # Tier 2 runtime
+            "tier2_entries_blocked": 0,
+            "tier2_block_details": [],  # [(day_idx, symbol, date_str), ...]
+            # Tier 1 pre-computation
+            "tier1_cells_penalized": 0,  # cells with multiplier < 1.0
+            "tier1_cells_total": 0,
+            "tier1_min_multiplier": 1.0,
+            "tier1_mean_multiplier": 1.0,
+            "tier1_pct_penalized": 0.0,
+            # Tier 1 runtime
+            "tier1_entries_penalized": 0,
+            "tier1_total_entries": 0,
+            "tier1_avg_applied_multiplier": 1.0,
+            "tier1_penalty_details": [],  # [(day_idx, symbol, multiplier), ...]
+        }
+
         # Tier 2: Earnings blackout map  {day_index: set of sym_indices}
         earnings_blackout_idx: Dict[int, set] = {}
         if cfg.earnings_blackout_enabled:
@@ -385,6 +413,17 @@ class BacktestEngine:
                             earnings_blackout_idx[int(idx)] = {
                                 sym_to_idx[s] for s in syms if s in sym_to_idx
                             }
+                # Diagnostics
+                _diag["tier2_symbols_with_earnings"] = len({
+                    s for syms in blackout_map.values() for s in syms
+                })
+                _diag["tier2_total_earnings_dates"] = sum(
+                    len(syms) for syms in blackout_map.values()
+                )
+                _diag["tier2_blackout_day_count"] = len(earnings_blackout_idx)
+                _diag["tier2_blackout_entries_total"] = sum(
+                    len(v) for v in earnings_blackout_idx.values()
+                )
             except Exception as e:
                 import logging
                 logging.getLogger("backtest").warning(
@@ -406,6 +445,15 @@ class BacktestEngine:
                     drop_threshold=cfg.sentiment_proxy_drop_threshold,
                 )
                 sentiment_arr = sentiment_mult_df.values.astype(np.float64)
+                # Diagnostics
+                _diag["tier1_cells_total"] = int(sentiment_arr.size)
+                penalized_mask = sentiment_arr < 1.0
+                _diag["tier1_cells_penalized"] = int(penalized_mask.sum())
+                _diag["tier1_pct_penalized"] = float(
+                    penalized_mask.sum() / max(sentiment_arr.size, 1) * 100
+                )
+                _diag["tier1_min_multiplier"] = float(sentiment_arr.min())
+                _diag["tier1_mean_multiplier"] = float(sentiment_arr.mean())
             except Exception as e:
                 import logging
                 logging.getLogger("backtest").warning(
@@ -602,6 +650,11 @@ class BacktestEngine:
                 # Tier 2: Earnings blackout — skip entries near earnings dates
                 if cfg.earnings_blackout_enabled and i in earnings_blackout_idx:
                     if sym_idx in earnings_blackout_idx[i]:
+                        _diag["tier2_entries_blocked"] += 1
+                        if len(_diag["tier2_block_details"]) < 200:
+                            _diag["tier2_block_details"].append((
+                                i, sym_list[sym_idx], str(dates[i].date())
+                            ))
                         continue  # Earnings within blackout window
 
                 # Exposure check
@@ -616,7 +669,15 @@ class BacktestEngine:
 
                 # Tier 1: Sentiment penalty — reduce position on negative news
                 if cfg.sentiment_penalty_enabled:
-                    size_frac *= sentiment_arr[i, sym_idx]
+                    mult = sentiment_arr[i, sym_idx]
+                    _diag["tier1_total_entries"] += 1
+                    if mult < 1.0:
+                        _diag["tier1_entries_penalized"] += 1
+                        if len(_diag["tier1_penalty_details"]) < 200:
+                            _diag["tier1_penalty_details"].append((
+                                i, sym_list[sym_idx], round(float(mult), 4)
+                            ))
+                    size_frac *= mult
 
                 pos_value = portfolio_value * size_frac
                 shares = pos_value / px
@@ -679,6 +740,14 @@ class BacktestEngine:
         # Real exposure/position tracking (Phase 3A: replaced placeholders)
         results.avg_exposure = float(np.mean(daily_exposure[1:]))  # skip day 0
         results.max_positions = int(np.max(daily_n_positions))
+
+        # Attach news filter diagnostics
+        if _diag["tier1_total_entries"] > 0:
+            applied_mults = [m for (_, _, m) in _diag["tier1_penalty_details"]]
+            _diag["tier1_avg_applied_multiplier"] = (
+                sum(applied_mults) / len(applied_mults) if applied_mults else 1.0
+            )
+        results.filter_diagnostics = _diag
 
         self._calculate_metrics(results)
 

@@ -47,9 +47,14 @@ class EarningsCalendar:
     def __init__(self, project_root: Path, cache_max_age_days: int = 7):
         self.project_root = project_root
         self.cache_file = project_root / "data" / "snapshots" / "earnings_cache.json"
+        self.historical_cache_file = (
+            project_root / "data" / "snapshots" / "earnings_historical_cache.json"
+        )
         self.cache_max_age_days = cache_max_age_days
         self._cache: Dict = {}
+        self._historical_cache: Dict[str, List[str]] = {}
         self._load_cache()
+        self._load_historical_cache()
 
     # ─── Cache I/O ─────────────────────────────────────────────────────
 
@@ -71,6 +76,31 @@ class EarningsCalendar:
                 json.dump(self._cache, f, indent=2)
         except Exception as e:
             logger.warning(f"Could not save earnings cache: {e}")
+
+    def _load_historical_cache(self) -> None:
+        """Load historical earnings cache (for backtesting — stable data)."""
+        if self.historical_cache_file.exists():
+            try:
+                with open(self.historical_cache_file, "r") as f:
+                    self._historical_cache = json.load(f)
+                logger.info(
+                    f"Loaded historical earnings cache: {len(self._historical_cache)} symbols"
+                )
+            except Exception as e:
+                logger.warning(f"Could not load historical earnings cache: {e}")
+                self._historical_cache = {}
+
+    def _save_historical_cache(self) -> None:
+        """Persist historical earnings cache to disk."""
+        self.historical_cache_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(self.historical_cache_file, "w") as f:
+                json.dump(self._historical_cache, f, indent=2)
+            logger.info(
+                f"Saved historical earnings cache: {len(self._historical_cache)} symbols"
+            )
+        except Exception as e:
+            logger.warning(f"Could not save historical earnings cache: {e}")
 
     def _is_stale(self, symbol: str) -> bool:
         """Check if a symbol's cache entry is stale."""
@@ -218,8 +248,27 @@ class EarningsCalendar:
         )
 
         fetched = 0
-        for sym in symbols:
-            earnings_dates = self._fetch_historical_earnings(sym)
+        cache_hits = 0
+        fetched_fresh = 0
+        for i, sym in enumerate(symbols):
+            # Check persistent historical cache first
+            if sym in self._historical_cache:
+                earnings_dates = self._historical_cache[sym]
+                cache_hits += 1
+            else:
+                earnings_dates = self._fetch_historical_earnings(sym)
+                if earnings_dates:
+                    self._historical_cache[sym] = earnings_dates
+                fetched_fresh += 1
+                # Rate-limit API calls (0.35s between fresh fetches)
+                if fetched_fresh % 10 == 0:
+                    time.sleep(0.5)
+                elif fetched_fresh > 0:
+                    time.sleep(0.35)
+                # Progress logging every 50 symbols
+                if fetched_fresh % 50 == 0 and fetched_fresh > 0:
+                    logger.info(f"  ... fetched {fetched_fresh}/{len(symbols)} symbols")
+
             if not earnings_dates:
                 continue
             fetched += 1
@@ -239,8 +288,13 @@ class EarningsCalendar:
                         blackout[blackout_date] = set()
                     blackout[blackout_date].add(sym)
 
+        # Save historical cache if we fetched any fresh data
+        if fetched_fresh > 0:
+            self._save_historical_cache()
+
         logger.info(
-            f"Earnings blackout built: {fetched}/{len(symbols)} symbols, "
+            f"Earnings blackout built: {fetched}/{len(symbols)} symbols "
+            f"({cache_hits} cached, {fetched_fresh} fresh fetched), "
             f"{len(blackout)} blackout dates"
         )
         return blackout
@@ -249,15 +303,20 @@ class EarningsCalendar:
         """
         Fetch historical earnings dates for a symbol.
 
+        Requires `lxml` package (pip install lxml) for HTML parsing.
         Returns list of date strings (YYYY-MM-DD).
         """
         try:
             import yfinance as yf
 
-            t = yf.Ticker(symbol)
-            # Try earnings_dates (includes past + future)
+            # yfinance expects hyphens not underscores (BRK_B → BRK-B)
+            yf_symbol = symbol.replace("_", "-")
+            t = yf.Ticker(yf_symbol)
+
+            # Primary: get_earnings_dates (scrapes Yahoo Finance earnings page)
+            # Needs lxml installed. limit=80 gives ~100 entries (~25 years)
             try:
-                ed = t.get_earnings_dates(limit=40)
+                ed = t.get_earnings_dates(limit=80)
                 if ed is not None and not ed.empty:
                     dates = []
                     for dt in ed.index:
@@ -266,18 +325,29 @@ class EarningsCalendar:
                             d = d.tz_localize(None)
                         dates.append(d.strftime("%Y-%m-%d"))
                     return dates
-            except Exception:
-                pass
+            except ImportError:
+                logger.warning(
+                    "lxml not installed — get_earnings_dates() will fail. "
+                    "Run: pip install lxml"
+                )
+            except Exception as e:
+                logger.debug(f"{symbol}: get_earnings_dates failed: {e}")
 
-            # Fallback: quarterly earnings
+            # Fallback: quarterly_income_stmt column dates
+            # These are fiscal quarter-end dates (not announcement dates)
+            # so they're offset by ~6 weeks, but better than nothing
             try:
-                qe = t.quarterly_earnings
-                if qe is not None and not qe.empty and hasattr(qe, "index"):
+                qi = t.quarterly_income_stmt
+                if qi is not None and not qi.empty:
                     dates = []
-                    for dt in qe.index:
+                    for dt in qi.columns:
                         d = pd.Timestamp(dt)
+                        if d.tz is not None:
+                            d = d.tz_localize(None)
                         dates.append(d.strftime("%Y-%m-%d"))
-                    return dates
+                    if dates:
+                        logger.debug(f"{symbol}: using quarterly_income_stmt fallback ({len(dates)} dates)")
+                        return dates
             except Exception:
                 pass
 

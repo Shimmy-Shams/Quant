@@ -7,6 +7,7 @@ pytz>=2024.1
 
 # Historical Data Sources
 yfinance>=0.2.32
+lxml>=4.9.0  # Required by yfinance for earnings date scraping
 
 # Data Analysis
 pandas>=2.0.0
