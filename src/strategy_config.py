@@ -222,7 +222,16 @@ class ConfigLoader:
 
             # Regime filter
             use_regime_filter=self.get('backtest.use_regime_filter', True),
-            min_regime_multiplier=self.get('backtest.min_regime_multiplier', 0.5)
+            min_regime_multiplier=self.get('backtest.min_regime_multiplier', 0.5),
+
+            # News filters (Tier 1 + Tier 2)
+            earnings_blackout_enabled=self.get('backtest.earnings_blackout.enabled', False),
+            earnings_blackout_days=self.get('backtest.earnings_blackout.blackout_days', 2),
+            sentiment_penalty_enabled=self.get('backtest.sentiment_penalty.enabled', False),
+            sentiment_penalty_floor=self.get('backtest.sentiment_penalty.penalty_floor', 0.5),
+            sentiment_negative_threshold=self.get('backtest.sentiment_penalty.negative_threshold', -0.3),
+            sentiment_proxy_lookback=self.get('backtest.sentiment_penalty.proxy_lookback_days', 5),
+            sentiment_proxy_drop_threshold=self.get('backtest.sentiment_penalty.proxy_drop_threshold', -0.08),
         )
 
     def to_optimization_config(self):

@@ -437,6 +437,17 @@ class AlpacaExecutor:
             if abs(signal_val) <= config.entry_threshold:
                 continue
 
+            # Tier 2: Earnings blackout — skip entries near earnings
+            if getattr(config, 'earnings_blackout_enabled', False):
+                try:
+                    from data.earnings_calendar import EarningsCalendar
+                    from pathlib import Path
+                    _ec = EarningsCalendar(Path(__file__).resolve().parent.parent.parent)
+                    if _ec.has_upcoming_earnings(symbol, within_days=getattr(config, 'earnings_blackout_days', 2), reference_date=str(date.date())):
+                        continue  # Earnings within blackout window
+                except Exception:
+                    pass  # Fail open — don't block trade if calendar unavailable
+
             # Determine direction
             if signal_val > 0:
                 direction = -1  # Mean reversion: high signal → short
@@ -472,6 +483,21 @@ class AlpacaExecutor:
                 date=date,
                 price_df=price_df,
             )
+
+            # Tier 1: Sentiment penalty — reduce position on negative news
+            if getattr(config, 'sentiment_penalty_enabled', False):
+                try:
+                    from data.news_sentiment import NewsSentiment
+                    from pathlib import Path
+                    _ns = NewsSentiment(
+                        Path(__file__).resolve().parent.parent.parent,
+                        penalty_floor=getattr(config, 'sentiment_penalty_floor', 0.5),
+                        negative_threshold=getattr(config, 'sentiment_negative_threshold', -0.3),
+                    )
+                    size_frac *= _ns.get_sentiment_multiplier(symbol)
+                except Exception:
+                    pass  # Fail open — don't adjust if sentiment unavailable
+
             position_value = equity * size_frac
             qty = int(position_value / price)
 

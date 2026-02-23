@@ -7,6 +7,7 @@ Supports multiple position sizing methods, transaction costs, and detailed perfo
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from typing import Dict, Optional, Tuple, List, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -78,6 +79,19 @@ class BacktestConfig:
     # Regime filter
     use_regime_filter: bool = True
     min_regime_multiplier: float = 0.5  # Don't trade if regime < this
+
+    # News filters (Tier 1 + Tier 2)
+    # Tier 2: Earnings avoidance — skip entries near earnings
+    earnings_blackout_enabled: bool = False
+    earnings_blackout_days: int = 2      # Block entries within N days of earnings
+
+    # Tier 1: Sentiment penalty — reduce position size on negative news
+    sentiment_penalty_enabled: bool = False
+    sentiment_penalty_floor: float = 0.5       # Minimum multiplier (0.5 = halve)
+    sentiment_negative_threshold: float = -0.3  # Score below this → penalty
+    # Backtest proxy: use price-action as sentiment proxy
+    sentiment_proxy_lookback: int = 5           # Days of price drop to flag
+    sentiment_proxy_drop_threshold: float = -0.08  # Drop > 8% in window → negative
 
 
 @dataclass
@@ -349,6 +363,58 @@ class BacktestEngine:
         else:
             vol_sizes = np.full((n_days, n_syms), cfg.max_position_size)
 
+        # --- Pre-compute news filters (Tier 1 + Tier 2) ---
+        # Tier 2: Earnings blackout map  {day_index: set of sym_indices}
+        earnings_blackout_idx: Dict[int, set] = {}
+        if cfg.earnings_blackout_enabled:
+            try:
+                from data.earnings_calendar import EarningsCalendar
+                ec = EarningsCalendar(
+                    Path(__file__).resolve().parent.parent.parent
+                )
+                blackout_map = ec.build_backtest_blackout(
+                    symbols=sym_list,
+                    price_dates=dates,
+                    blackout_days=cfg.earnings_blackout_days,
+                )
+                # Convert date→symbol_set to day_index→sym_idx_set for O(1) loop lookup
+                for dt, syms in blackout_map.items():
+                    if dt in price_data.index:
+                        idx = price_data.index.get_loc(dt)
+                        if isinstance(idx, (int, np.integer)):
+                            earnings_blackout_idx[int(idx)] = {
+                                sym_to_idx[s] for s in syms if s in sym_to_idx
+                            }
+            except Exception as e:
+                import logging
+                logging.getLogger("backtest").warning(
+                    f"Earnings blackout init failed: {e} — continuing without"
+                )
+
+        # Tier 1: Sentiment multiplier array (n_days, n_syms) values 0.5–1.0
+        if cfg.sentiment_penalty_enabled:
+            try:
+                from data.news_sentiment import NewsSentiment
+                ns = NewsSentiment(
+                    Path(__file__).resolve().parent.parent.parent,
+                    penalty_floor=cfg.sentiment_penalty_floor,
+                    negative_threshold=cfg.sentiment_negative_threshold,
+                )
+                sentiment_mult_df = ns.build_backtest_sentiment(
+                    price_df=price_data,
+                    lookback_days=cfg.sentiment_proxy_lookback,
+                    drop_threshold=cfg.sentiment_proxy_drop_threshold,
+                )
+                sentiment_arr = sentiment_mult_df.values.astype(np.float64)
+            except Exception as e:
+                import logging
+                logging.getLogger("backtest").warning(
+                    f"Sentiment penalty init failed: {e} — continuing without"
+                )
+                sentiment_arr = np.ones((n_days, n_syms), dtype=np.float64)
+        else:
+            sentiment_arr = np.ones((n_days, n_syms), dtype=np.float64)
+
         # --- Initialize tracking arrays ---
         positions_arr = np.zeros((n_days, n_syms), dtype=np.float64)  # Shares held
         cash_arr = np.zeros(n_days, dtype=np.float64)
@@ -533,6 +599,11 @@ class BacktestEngine:
                 if abs(sig) <= cfg.entry_threshold:
                     continue
 
+                # Tier 2: Earnings blackout — skip entries near earnings dates
+                if cfg.earnings_blackout_enabled and i in earnings_blackout_idx:
+                    if sym_idx in earnings_blackout_idx[i]:
+                        continue  # Earnings within blackout window
+
                 # Exposure check
                 if total_exposure >= max_exposure:
                     break  # No more room for any position
@@ -542,6 +613,11 @@ class BacktestEngine:
                     signal_strength=abs(sig),
                     vol_size=vol_sizes[i, sym_idx]
                 )
+
+                # Tier 1: Sentiment penalty — reduce position on negative news
+                if cfg.sentiment_penalty_enabled:
+                    size_frac *= sentiment_arr[i, sym_idx]
+
                 pos_value = portfolio_value * size_frac
                 shares = pos_value / px
                 side = 'long' if sig < 0 else 'short'
