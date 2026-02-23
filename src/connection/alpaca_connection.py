@@ -16,7 +16,7 @@ from enum import Enum
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
-    MarketOrderRequest, LimitOrderRequest,
+    MarketOrderRequest, LimitOrderRequest, StopOrderRequest,
     GetOrdersRequest, ClosePositionRequest,
     StopLossRequest, TakeProfitRequest,
 )
@@ -448,8 +448,78 @@ class AlpacaConnection:
             'type': o.type.value if o.type else None,
             'status': o.status.value if o.status else None,
             'submitted_at': str(o.submitted_at),
+            'filled_at': str(o.filled_at) if o.filled_at else None,
             'filled_avg_price': float(o.filled_avg_price) if o.filled_avg_price else None,
+            'stop_price': float(o.stop_price) if o.stop_price else None,
+            'limit_price': float(o.limit_price) if o.limit_price else None,
+            'order_class': o.order_class.value if o.order_class else None,
         } for o in orders]
+
+    def submit_stop_order(
+        self,
+        symbol: str,
+        qty: int,
+        side: str,
+        stop_price: float,
+        time_in_force: str = 'gtc'
+    ) -> Dict:
+        """
+        Submit a standalone stop (market) order.
+
+        Used to retrofit stop-loss protection for positions that were
+        entered without bracket orders.
+
+        Args:
+            symbol: Stock ticker
+            qty: Number of shares
+            side: 'buy' or 'sell' (exit side, opposite of position)
+            stop_price: Trigger price for the stop
+            time_in_force: 'day' or 'gtc'
+
+        Returns:
+            Order details dict
+        """
+        if self.config.trading_mode != TradingMode.LIVE:
+            self.logger.info(
+                f"[{self.config.trading_mode.value.upper()}] Would submit STOP: "
+                f"{side.upper()} {qty} {symbol} @ stop=${stop_price:.2f}"
+            )
+            return {
+                'id': f'shadow-{datetime.now().timestamp()}',
+                'symbol': symbol, 'qty': qty, 'side': side,
+                'type': 'stop', 'stop_price': stop_price,
+                'status': 'simulated',
+                'submitted_at': datetime.now().isoformat(),
+            }
+
+        order_request = StopOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY if side == 'buy' else OrderSide.SELL,
+            time_in_force=TimeInForce.DAY if time_in_force == 'day' else TimeInForce.GTC,
+            stop_price=stop_price,
+        )
+
+        order = self.trading_client.submit_order(order_request)
+        self.logger.info(
+            f"Stop order submitted: {side.upper()} {qty} {symbol} "
+            f"@ stop=${stop_price:.2f} → {order.status}"
+        )
+        return {
+            'id': str(order.id),
+            'symbol': order.symbol,
+            'qty': float(order.qty),
+            'side': order.side.value,
+            'type': order.type.value,
+            'stop_price': stop_price,
+            'status': order.status.value,
+            'submitted_at': str(order.submitted_at),
+        }
+
+    def get_open_orders_for_symbol(self, symbol: str) -> List[Dict]:
+        """Get all open orders for a specific symbol."""
+        all_open = self.get_orders(status='open', limit=100)
+        return [o for o in all_open if o.get('symbol') == symbol]
 
     def cancel_all_orders(self) -> int:
         """Cancel all open orders. Returns count of cancelled orders."""

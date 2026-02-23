@@ -113,6 +113,111 @@ def handle_shutdown(signum, frame):
 # DAILY EXECUTION LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def _get_entry_dates_from_orders(conn: AlpacaConnection) -> Dict[str, pd.Timestamp]:
+    """
+    Query Alpaca order history to find the actual fill date for each
+    currently-held position.  Returns {symbol: fill_timestamp}.
+
+    Falls back to submitted_at if filled_at is unavailable.
+    """
+    entry_dates: Dict[str, pd.Timestamp] = {}
+    try:
+        # Fetch recent filled orders (buy-side for longs, sell-side for shorts)
+        orders = conn.get_orders(status='closed', limit=100)
+        # Build a map: for each symbol, find the most recent entry fill
+        current_positions = {p['symbol'] for p in conn.get_positions()}
+        for o in orders:
+            sym = o.get('symbol')
+            if sym not in current_positions or sym in entry_dates:
+                continue
+            if o.get('status') != 'filled':
+                continue
+            # Use filled_at (actual fill time), fall back to submitted_at
+            ts_str = o.get('filled_at') or o.get('submitted_at', '')
+            if ts_str and ts_str != 'None':
+                try:
+                    entry_dates[sym] = pd.Timestamp(ts_str).tz_localize(None)
+                except Exception:
+                    entry_dates[sym] = pd.Timestamp(ts_str[:19])
+    except Exception as e:
+        logger.warning(f"Could not fetch entry dates from orders: {e}")
+    return entry_dates
+
+
+def _retrofit_bracket_orders(
+    conn: AlpacaConnection,
+    bt_config: BacktestConfig,
+) -> None:
+    """
+    On startup, check all open positions for missing stop-loss orders
+    and submit standalone stop orders to protect them.
+
+    This handles legacy positions entered before bracket order support
+    was deployed, or positions whose bracket legs were cancelled.
+    """
+    if conn.config.trading_mode != TradingMode.LIVE:
+        return
+
+    stop_loss_pct = bt_config.stop_loss_pct
+    short_sl_pct = bt_config.short_stop_loss_pct or stop_loss_pct
+    take_profit_pct = bt_config.take_profit_pct
+
+    if stop_loss_pct is None:
+        return
+
+    positions = conn.get_positions()
+    if not positions:
+        return
+
+    # Get all open orders to check which positions already have stop orders
+    open_orders = conn.get_orders(status='open', limit=200)
+    symbols_with_stops = set()
+    for o in open_orders:
+        if o.get('type') in ('stop', 'stop_limit') and o.get('symbol'):
+            symbols_with_stops.add(o['symbol'])
+
+    retrofitted = 0
+    for pos in positions:
+        sym = pos['symbol']
+        if sym in symbols_with_stops:
+            continue  # Already has a stop order
+
+        qty = abs(float(pos['qty']))
+        entry_price = float(pos['avg_entry_price'])
+        is_long = float(pos['qty']) > 0
+        side_str = 'long' if is_long else 'short'
+
+        # Compute stop price
+        sl_pct = stop_loss_pct if is_long else short_sl_pct
+        if is_long:
+            stop_price = round(entry_price * (1 - sl_pct), 2)
+            exit_side = 'sell'
+        else:
+            stop_price = round(entry_price * (1 + sl_pct), 2)
+            exit_side = 'buy'
+
+        try:
+            order = conn.submit_stop_order(
+                symbol=sym,
+                qty=int(qty),
+                side=exit_side,
+                stop_price=stop_price,
+            )
+            logger.info(
+                f"🛡️ Retrofitted stop-loss: {sym} {side_str} "
+                f"qty={int(qty)} SL=${stop_price:.2f} "
+                f"(entry=${entry_price:.2f}, {sl_pct:.0%}) → {order['status']}"
+            )
+            retrofitted += 1
+        except Exception as e:
+            logger.error(f"Failed to retrofit stop for {sym}: {e}")
+
+    if retrofitted:
+        logger.info(f"Retrofitted {retrofitted} stop-loss orders for unprotected positions")
+    else:
+        logger.info("All positions have stop-loss protection ✓")
+
 def run_daily_cycle(
     conn: AlpacaConnection,
     adapter: AlpacaDataAdapter,
@@ -175,15 +280,50 @@ def run_daily_cycle(
     elif mode == TradingMode.LIVE:
         assert executor is not None
 
+        # Get actual entry dates from Alpaca order history (Fix 3)
+        entry_dates = _get_entry_dates_from_orders(conn)
+
         # Get current live positions
         current_positions: Dict[str, Dict] = {}
         for pos in conn.get_positions():
-            current_positions[pos["symbol"]] = {
+            sym = pos["symbol"]
+            current_positions[sym] = {
                 "qty": int(pos["qty"]),
                 "side": "long" if int(pos["qty"]) > 0 else "short",
                 "entry_price": float(pos["avg_entry_price"]),
-                "entry_date": pd.Timestamp.now() - pd.Timedelta(days=1),
+                "entry_date": entry_dates.get(sym, pd.Timestamp.now() - pd.Timedelta(days=1)),
             }
+
+        # Fetch real-time prices for exit evaluation (Fix 2)
+        # Cached price_df may be stale, but live prices from Alpaca are current
+        held_symbols = list(current_positions.keys())
+        live_prices = conn.get_latest_trades(held_symbols) if held_symbols else {}
+
+        # Overlay live prices onto the price DataFrame's last row
+        # so exit logic sees actual current prices, not stale cache
+        if live_prices:
+            live_row = price_df.iloc[-1].copy()
+            for sym, px in live_prices.items():
+                if sym in live_row.index and px > 0:
+                    live_row[sym] = px
+            # Append as a new "today" row if the cache is stale
+            cache_date = price_df.index[-1].date()
+            real_today = pd.Timestamp.now().normalize().date()
+            if cache_date < real_today:
+                new_idx = pd.Timestamp(real_today)
+                price_df.loc[new_idx] = live_row
+                signal_df.loc[new_idx] = signal_df.iloc[-1]  # carry forward signals
+                zscore_df.loc[new_idx] = zscore_df.iloc[-1]
+                today = new_idx
+                logger.info(
+                    f"Overlaid {len(live_prices)} live prices onto stale cache "
+                    f"({cache_date} → {real_today})"
+                )
+            else:
+                # Cache is current day — just update the last row
+                for sym, px in live_prices.items():
+                    if sym in price_df.columns and px > 0:
+                        price_df.iloc[-1][sym] = px
 
         decisions = executor.generate_decisions_from_signals(
             signal_df=signal_df,
@@ -727,6 +867,10 @@ def main():
 
     # ── Seed equity history from Alpaca portfolio history ──
     _seed_equity_history(conn)
+
+    # ── Retrofit stop-loss orders for unprotected positions (Fix 1) ──
+    if mode == TradingMode.LIVE:
+        _retrofit_bracket_orders(conn, bt_config)
 
     # ── Data adapter ──
     adapter = AlpacaDataAdapter(

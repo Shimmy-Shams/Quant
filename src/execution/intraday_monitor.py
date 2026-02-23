@@ -52,6 +52,9 @@ class IntradayMonitorConfig:
         poll_interval_sec: int = 300,           # 5 minutes between checks
         start_time_et: str = "09:45",            # Start monitoring (15 min after open)
         stop_time_et: str = "15:50",             # Stop before daily execution window
+        stop_loss_enabled: bool = True,
+        stop_loss_pct: float = 0.10,              # 10% hard stop-loss
+        short_stop_loss_pct: float = 0.10,        # Short-specific stop-loss
         trailing_stop_enabled: bool = True,
         trailing_stop_trail_pct: float = 0.05,   # 5% trail from peak
         trailing_stop_activation_pct: float = 0.02,  # Activate after 2% profit
@@ -65,6 +68,9 @@ class IntradayMonitorConfig:
         self.poll_interval_sec = poll_interval_sec
         self.start_time_et = start_time_et
         self.stop_time_et = stop_time_et
+        self.stop_loss_enabled = stop_loss_enabled
+        self.stop_loss_pct = stop_loss_pct
+        self.short_stop_loss_pct = short_stop_loss_pct
         self.trailing_stop_enabled = trailing_stop_enabled
         self.trailing_stop_trail_pct = trailing_stop_trail_pct
         self.trailing_stop_activation_pct = trailing_stop_activation_pct
@@ -82,6 +88,9 @@ class IntradayMonitorConfig:
             poll_interval_sec=d.get("poll_interval_sec", 300),
             start_time_et=d.get("start_time_et", "09:45"),
             stop_time_et=d.get("stop_time_et", "15:50"),
+            stop_loss_enabled=d.get("stop_loss_enabled", True),
+            stop_loss_pct=d.get("stop_loss_pct", 0.10),
+            short_stop_loss_pct=d.get("short_stop_loss_pct", 0.10),
             trailing_stop_enabled=d.get("trailing_stop_enabled", True),
             trailing_stop_trail_pct=d.get("trailing_stop_trail_pct", 0.05),
             trailing_stop_activation_pct=d.get("trailing_stop_activation_pct", 0.02),
@@ -134,6 +143,9 @@ class IntradayMonitor:
         # Track which symbols we already exited this session (avoid re-exit)
         self._exited_today: Set[str] = set()
 
+        # Cache of actual entry dates from Alpaca orders
+        self._entry_dates: Dict[str, pd.Timestamp] = {}
+
     # ─── Main Loop ─────────────────────────────────────────────────────
 
     def run(self) -> Dict:
@@ -149,6 +161,7 @@ class IntradayMonitor:
             Summary dict with counts of exits triggered.
         """
         summary = {
+            "stop_loss_exits": 0,
             "trailing_stop_exits": 0,
             "time_decay_exits": 0,
             "circuit_breaker_exits": 0,
@@ -162,6 +175,9 @@ class IntradayMonitor:
             f"poll={self.config.poll_interval_sec}s | "
             f"window={self.config.start_time_et}–{self.config.stop_time_et} ET"
         )
+
+        # Load actual entry dates once per session
+        self._load_entry_dates()
 
         while not self._shutdown():
             now_et = datetime.now(ET)
@@ -185,6 +201,7 @@ class IntradayMonitor:
                 logger.info(
                     f"📊 Intraday monitor complete | "
                     f"polls={summary['polls']} | "
+                    f"stop_loss_exits={summary['stop_loss_exits']} | "
                     f"trailing_exits={summary['trailing_stop_exits']} | "
                     f"decay_exits={summary['time_decay_exits']} | "
                     f"breaker_exits={summary['circuit_breaker_exits']}"
@@ -214,6 +231,13 @@ class IntradayMonitor:
 
                 # ── Check exit conditions ──────────────────────────────
                 exits_triggered: List[Dict] = []
+
+                # 0. Hard stop-loss (basic price-based — catches positions
+                #    that lack bracket stop orders on Alpaca)
+                if self.config.stop_loss_enabled:
+                    sl_exits = self._check_stop_loss(positions, prices)
+                    exits_triggered.extend(sl_exits)
+                    summary["stop_loss_exits"] += len(sl_exits)
 
                 # 1. Trailing stop
                 if self.config.trailing_stop_enabled:
@@ -283,7 +307,9 @@ class IntradayMonitor:
                         "qty": abs(qty),
                         "side": "long" if qty > 0 else "short",
                         "entry_price": float(pos["avg_entry_price"]),
-                        "entry_date": pd.Timestamp.now() - pd.Timedelta(days=1),
+                        "entry_date": self._entry_dates.get(
+                            sym, pd.Timestamp.now() - pd.Timedelta(days=1)
+                        ),
                         "current_price": float(pos["current_price"]),
                     }
             except Exception as e:
@@ -291,6 +317,77 @@ class IntradayMonitor:
             return positions
 
         return {}
+
+    # ─── Entry-Date Lookup ────────────────────────────────────────────
+
+    def _load_entry_dates(self) -> None:
+        """Populate self._entry_dates from Alpaca closed fill history."""
+        if self.mode != "LIVE":
+            return
+        try:
+            orders = self.conn.get_orders(status="closed", limit=200)
+            # Walk newest → oldest; keep the *first* fill per symbol
+            # (most recent entry if a symbol was re-entered).
+            seen: set = set()
+            for o in orders:
+                sym = o["symbol"]
+                if sym in seen:
+                    continue
+                if o.get("filled_at"):
+                    self._entry_dates[sym] = pd.Timestamp(o["filled_at"])
+                    seen.add(sym)
+            logger.info(
+                f"Loaded entry dates for {len(self._entry_dates)} symbols "
+                f"from order history"
+            )
+        except Exception as e:
+            logger.warning(f"Could not load entry dates: {e}")
+
+    # ─── Hard Stop-Loss Check ─────────────────────────────────────────
+
+    def _check_stop_loss(
+        self, positions: Dict[str, Dict], prices: Dict[str, float]
+    ) -> List[Dict]:
+        """
+        Basic stop-loss: exit if position P&L (from entry) breaches the
+        configured threshold.  This is the safety net for positions that
+        lack a hardware bracket stop on Alpaca.
+        """
+        exits: List[Dict] = []
+        for sym, pos in positions.items():
+            current = prices.get(sym)
+            if current is None:
+                continue
+
+            entry = pos["entry_price"]
+            side = pos["side"]
+
+            if side == "long":
+                pnl_pct = (current - entry) / entry
+                threshold = -self.config.stop_loss_pct
+            else:
+                pnl_pct = (entry - current) / entry
+                threshold = -self.config.short_stop_loss_pct
+
+            if pnl_pct <= threshold:
+                logger.warning(
+                    f"🛑 STOP-LOSS triggered for {sym} | "
+                    f"side={side} entry={entry:.2f} "
+                    f"current={current:.2f} pnl={pnl_pct:+.2%} "
+                    f"threshold={threshold:+.2%}"
+                )
+                exits.append(
+                    {
+                        "symbol": sym,
+                        "reason": "stop_loss",
+                        "side": side,
+                        "qty": pos["qty"],
+                        "entry_price": entry,
+                        "exit_price": current,
+                        "pnl_pct": pnl_pct,
+                    }
+                )
+        return exits
 
     # ─── Peak Price Tracking ───────────────────────────────────────────
 

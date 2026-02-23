@@ -216,13 +216,13 @@ def fetch_data(
     """
     cache_dir = adapter.cache_dir
 
-    # Try recent cache first (< 3 days old → skip API)
+    # Try recent cache first (< 1 day old → skip API)
     if allow_stale_cache:
         cache_files = list(cache_dir.glob("*.parquet")) if cache_dir.exists() else []
         if cache_files:
             latest_cache = max(cache_files, key=lambda p: p.stat().st_mtime)
             age_days = (time.time() - latest_cache.stat().st_mtime) / 86400
-            if age_days <= 3:
+            if age_days <= 1:
                 cached = adapter.load_cache(universe, label="latest")
                 if cached:
                     coverage = len(cached) / len(universe) if universe else 0

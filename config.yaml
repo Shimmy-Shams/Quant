@@ -182,6 +182,11 @@ backtest:
     time_decay_days: 10             # Check positions held > N days
     time_decay_threshold: 0.01      # Exit if |pnl| < 1% after N days
 
+    # Hard stop-loss (basic price-based safety net)
+    stop_loss_enabled: true
+    stop_loss_pct: 0.10             # Exit long if loss > 10% from entry
+    short_stop_loss_pct: 0.10       # Exit short if loss > 10% from entry
+
     # Circuit breaker (portfolio-level kill switch)
     circuit_breaker_pct: 0.08       # Close all if portfolio DD > 8% from peak
     circuit_breaker_cooldown_min: 60  # Minutes to wait before re-entering after trip
