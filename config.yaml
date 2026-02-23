@@ -201,12 +201,12 @@ backtest:
 
   # Tier 2: Earnings Avoidance (skip entries near earnings dates)
   earnings_blackout:
-    enabled: false                  # Set true to test in backtest/shadow
+    enabled: true                   # Enabled — shadow mode testing
     blackout_days: 2                # Block entries within N days of earnings
 
   # Tier 1: Sentiment Penalty (reduce position size on negative news)
   sentiment_penalty:
-    enabled: false                  # Set true to test in backtest/shadow
+    enabled: true                   # Enabled — shadow mode testing
     penalty_floor: 0.5              # Minimum position-size multiplier
     negative_threshold: -0.3        # Aggregate score below this → penalty
     # Backtest proxy settings (uses price-action since we lack historical headlines)
