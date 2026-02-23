@@ -4,7 +4,7 @@ An autonomous, headless trading system that identifies and trades statistically 
 
 ## Overview
 
-This system trades a dynamically selected universe of up to 30 US equities, filtering for stocks that exhibit statistically significant mean-reverting behavior (Hurst exponent < 0.5). It generates composite trading signals from multiple quantitative indicators, executes near market close (3:55 PM ET) to match daily bar formation, and runs 24/7 as a systemd service on an Oracle Cloud VM.
+This system trades a dynamically selected universe of up to 100 US equities, filtering for stocks that exhibit statistically significant mean-reverting behavior (Hurst exponent < 0.5). It generates composite trading signals from multiple quantitative indicators, applies news event filters (earnings blackout + sentiment penalty), executes near market close (3:55 PM ET) to match daily bar formation, and runs 24/7 as a systemd service on an Oracle Cloud VM.
 
 **Live Dashboard**: [shimmy-shams.github.io/Quant](https://shimmy-shams.github.io/Quant/)
 
@@ -24,7 +24,7 @@ Not all stocks mean-revert. The system filters the investable universe using thr
 | **OU Half-Life** | Speed of mean reversion via Ornstein-Uhlenbeck regression (dP = θ(μ - P)dt). Half-life = ln(2)/\|θ\| | 10–252 days |
 | **ADF Test** | Augmented Dickey-Fuller stationarity test. Low p-value = stationary (mean-reverting) | p < 0.05 |
 
-Stocks are ranked by Hurst exponent (ascending) and the top 30 most mean-reverting are selected. Rankings are cached in `data/snapshots/hurst_rankings.csv` and recomputed when stale.
+Stocks are ranked by Hurst exponent (ascending) and the top 100 most mean-reverting are selected. Rankings are cached in `data/snapshots/hurst_rankings.csv` and recomputed when stale.
 
 ### 2. Signal Generation — The Composite Signal Pipeline
 
@@ -101,8 +101,8 @@ Total portfolio exposure is capped at 100% of equity.
 
 | Rule | Condition |
 |------|-----------|
-| **Entry** | \|composite signal\| > 1.43 (optimized threshold) |
-| **Signal Exit** | Z-score reverts past ±0.50 (long: z > -0.50, short: z < +0.50) |
+| **Entry** | \|composite signal\| > 1.43 (optimized threshold) || **Earnings Blackout** | Entry blocked if symbol has earnings within 2 calendar days (Tier 2 filter) |
+| **Sentiment Penalty** | Position size reduced by up to 50% if recent price drop > 8% in 5 days (Tier 1 filter) || **Signal Exit** | Z-score reverts past ±0.50 (long: z > -0.50, short: z < +0.50) |
 | **Stop Loss** | P&L < -10% (both longs and shorts) |
 | **Take Profit** | P&L > +15% |
 | **Max Holding** | 20 days (optimizer consensus from walk-forward periods) |
@@ -131,34 +131,77 @@ The system detects three volatility regimes and adjusts position sizing:
 | High Vol | Ratio 1.5–2.0 | 0.5× |
 | Crisis | Ratio > 2.0 | 0.0× (no trading) |
 
+### 7. News Event Integration
+
+The system integrates two layers of fundamental event awareness to reduce risk around material announcements. Both operate with a **fail-open** design — if data is unavailable, trades proceed normally.
+
+#### Tier 2: Earnings Blackout (Entry Blocker)
+
+Entries are **completely blocked** for any symbol within a configurable window (default: 2 calendar days) of an earnings announcement. This prevents entering positions right before a binary event that can gap the stock beyond stop-loss levels.
+
+- **Data source**: Yahoo Finance historical earnings dates via `yfinance.get_earnings_dates()` (requires `lxml`)
+- **Backtest**: Pre-builds a `{date → set(symbols)}` blackout map for the full period using ~100 historical earnings dates per symbol
+- **Live**: Checks upcoming earnings on-the-fly with 7-day cache refresh
+- **Coverage**: 212/216 backtest symbols have earnings data (4 missing = ETFs: SPY, QQQ, DIA, IWM — correct, ETFs don't report earnings)
+- **Impact**: Blocks ~3.9% of entry signals (1,403 entries blocked in 20-year backtest)
+
+#### Tier 1: Sentiment Penalty (Position Size Reducer)
+
+Instead of blocking trades, this layer **reduces position size** when negative sentiment is detected, using a sliding multiplier between 0.5× and 1.0×.
+
+- **Live mode**: Fetches recent headlines via Alpaca News API, scores with FinBERT (transformer) or keyword fallback, converts aggregate sentiment to a size multiplier
+- **Backtest proxy**: Since historical headlines aren't available for 20 years, uses a **price-action proxy** — if a stock dropped > 8% in the last 5 trading days, it's treated as a negative news event. This is a conservative approximation (large drops are almost always accompanied by negative news)
+- **Penalty formula**: Linear scale from threshold to floor. At -8% drop → slight reduction. At -16% (2× threshold) → maximum penalty (0.5× position size)
+- **Impact**: 6.6% of entries receive a sentiment penalty; 3.5% of all (day × symbol) cells are penalized
+
+#### Filter Performance (20-Year Backtest)
+
+| Configuration | Trades | Sharpe | Annual Return | Win Rate |
+|---|---|---|---|---|
+| Baseline (no filters) | 23,955 | 4.233 | 155.6% | 58.4% |
+| Tier 2 only (Earnings) | 23,745 | 3.987 | 135.1% | 58.1% |
+| Tier 1 only (Sentiment) | 24,370 | 4.218 | 151.5% | 58.4% |
+| Both filters | 24,185 | 3.969 | 131.4% | 58.2% |
+
+The Sharpe reduction (~6%) is expected — the filters remove some profitable pre-earnings trades in exchange for reduced tail risk from earnings surprises. The system trades risk-adjusted safety for raw return.
+
 ---
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    main_trader.py                        │
-│            Headless 24/7 Trading Loop                    │
-│                                                         │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │  Universe    │  │   Signal     │  │   Execution   │  │
-│  │  Selection   │→ │   Pipeline   │→ │   Engine      │  │
-│  │  (Hurst)     │  │  (Composite) │  │  (Alpaca)     │  │
-│  └─────────────┘  └──────────────┘  └───────────────┘  │
-│         │                │                  │            │
-│         ▼                ▼                  ▼            │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
-│  │  Alpaca      │  │  Mean Rev    │  │  Alpaca       │  │
-│  │  Data        │  │  Signals     │  │  Executor     │  │
-│  │  Adapter     │  │  + Kalman    │  │  + Risk Mgmt  │  │
-│  └─────────────┘  └──────────────┘  └───────────────┘  │
-│                         │                               │
-│                         ▼                               │
-│              ┌──────────────────┐                       │
-│              │    Dashboard     │                       │
-│              │   Generator      │──→ GitHub Pages       │
-│              └──────────────────┘                       │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      main_trader.py                         │
+│              Headless 24/7 Trading Loop                      │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐ │
+│  │  Universe    │  │   Signal     │  │    Execution       │ │
+│  │  Selection   │→ │   Pipeline   │→ │    Engine          │ │
+│  │  (Hurst×100) │  │  (Composite) │  │    (Alpaca)        │ │
+│  └─────────────┘  └──────────────┘  └────────────────────┘ │
+│         │                │                    │             │
+│         ▼                ▼                    ▼             │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐ │
+│  │  Alpaca      │  │  Mean Rev    │  │  Alpaca Executor   │ │
+│  │  Data        │  │  Signals     │  │  + Risk Mgmt       │ │
+│  │  Adapter     │  │  + Kalman    │  │  + News Filters    │ │
+│  └─────────────┘  └──────────────┘  └────────────────────┘ │
+│                         │                    │              │
+│                         │              ┌─────┴──────┐      │
+│                         │              │  Tier 1:    │      │
+│                         │              │  Sentiment  │      │
+│                         │              │  Penalty    │      │
+│                         │              ├────────────-┤      │
+│                         │              │  Tier 2:    │      │
+│                         │              │  Earnings   │      │
+│                         │              │  Blackout   │      │
+│                         │              └────────────-┘      │
+│                         ▼                                   │
+│              ┌──────────────────┐                           │
+│              │    Dashboard     │                           │
+│              │   Generator      │──→ GitHub Pages           │
+│              └──────────────────┘                           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Operating Modes
@@ -193,6 +236,8 @@ Quant/
 │   ├── data/
 │   │   ├── alpaca_data.py       # Alpaca market data adapter with caching
 │   │   ├── collector.py         # Historical data collection
+│   │   ├── earnings_calendar.py # Tier 2: Earnings date fetching + blackout maps
+│   │   ├── news_sentiment.py    # Tier 1: Sentiment scoring + position penalty
 │   │   ├── universe_builder.py  # Stock universe definitions (S&P, NASDAQ, DOW)
 │   │   └── yahoo_collector.py   # Yahoo Finance data collection
 │   ├── connection/
@@ -202,7 +247,7 @@ Quant/
 │       └── config.py            # Core configuration management
 ├── data/
 │   ├── historical/daily/        # Cached daily price data (parquet)
-│   ├── snapshots/               # Shadow state, equity history, hurst rankings
+│   ├── snapshots/               # Shadow state, equity history, hurst rankings, earnings cache
 │   └── logs/                    # Trading logs
 ├── docs/                        # Dashboard output + documentation
 │   └── index.html               # Generated live dashboard
@@ -216,10 +261,11 @@ Quant/
 All strategy parameters are centralized in `config.yaml`. Key sections:
 
 - **signals**: Z-score windows, Hurst thresholds, Kalman filter params, OU prediction, composite weights, gated mode settings, dynamic short filter
-- **backtest**: Capital, transaction costs, position sizing method, entry/exit thresholds, risk management (stop loss, take profit, trailing stop, time decay)
+- **backtest**: Capital, transaction costs, position sizing method, entry/exit thresholds, risk management (stop loss, take profit, trailing stop, time decay), news event filters (earnings blackout, sentiment penalty)
 - **optimization**: Walk-forward settings, Bayesian/grid search ranges, objective metric
 - **universe**: Statistical test toggles (Hurst, half-life, ADF)
 - **alpaca**: Data feed, universe size, execution mode
+- **news_events** (under backtest): Tier 2 earnings blackout (`enabled`, `blackout_days`) and Tier 1 sentiment penalty (`enabled`, `penalty_floor`, `negative_threshold`, `proxy_lookback_days`, `proxy_drop_threshold`)
 
 ---
 
