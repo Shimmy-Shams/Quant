@@ -519,6 +519,25 @@ def _save_live_state(conn: AlpacaConnection) -> None:
         except Exception as e:
             logger.warning(f"Could not fetch order history: {e}")
         
+        # Get open orders (stop-loss, take-profit, pending entries)
+        open_orders = []
+        try:
+            for order in conn.get_orders(status='open', limit=50):
+                open_orders.append({
+                    "symbol": order["symbol"],
+                    "side": order["side"],
+                    "qty": float(order["qty"]) if order["qty"] else 0,
+                    "type": order.get("type", "market"),
+                    "stop_price": order.get("stop_price"),
+                    "limit_price": order.get("limit_price"),
+                    "order_class": order.get("order_class"),
+                    "status": order.get("status", "open"),
+                    "submitted_at": order.get("submitted_at", "")[:19],
+                    "order_id": order["id"],
+                })
+        except Exception as e:
+            logger.warning(f"Could not fetch open orders: {e}")
+
         # Save snapshot
         equity_val = float(account["equity"])
         snapshot = {
@@ -532,6 +551,7 @@ def _save_live_state(conn: AlpacaConnection) -> None:
             },
             "positions": positions,
             "recent_trades": trades,
+            "open_orders": open_orders,
         }
         
         with open(state_file, "w") as f:

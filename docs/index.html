@@ -116,6 +116,10 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 .badge-sell   { background: #da3633; color: #fff; }
 .badge-filled { background: #1f6feb; color: #fff; }
 .badge-closed { background: #30363d; color: #8b949e; }
+.badge-open { background: #d29922; color: #fff; }
+.badge-stoploss { background: #da3633; color: #fff; font-size: 0.75em; }
+.badge-takeprofit { background: #238636; color: #fff; font-size: 0.75em; }
+.badge-bracket { background: #8957e5; color: #fff; font-size: 0.75em; }
 
 /* After-hours info */
 .ah-badge {
@@ -332,6 +336,15 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             </p>
         </div>
 
+        <!-- Open Orders -->
+        <div class="section" id="open-orders-section">
+            <div class="section-header">
+                <div class="section-title">Open Orders</div>
+                <div id="open-orders-count" class="timestamp"></div>
+            </div>
+            <div id="open-orders-table" class="table-wrap"></div>
+        </div>
+
         <!-- Recent Trades -->
         <div class="section">
             <div class="section-title">Recent Trades</div>
@@ -347,7 +360,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 
     <script>
     // ── Embedded server-side data ─────────────────────────────────────────
-    const DATA = {"positions": [{"symbol": "CRWD", "side": "long", "qty": 232, "entry_price": 413.960733, "current_price": 412.21, "market_value": 95632.72, "pnl": -406.170056, "pnl_pct": -0.42300000000000004}, {"symbol": "ETHUSD", "side": "short", "qty": 0, "entry_price": 1989.4, "current_price": 2016.83, "market_value": 24.789364, "pnl": 0.337149, "pnl_pct": 1.379}], "trades": [{"symbol": "CRWD", "side": "buy", "qty": 232.0, "price": 413.960733, "date": "2026-02-17", "status": "filled"}, {"symbol": "ETH/USD", "side": "buy", "qty": 0.0, "price": 1989.4, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "sell", "qty": 0.000356827, "price": 68441.72, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "buy", "qty": 0.0, "price": 68504.9, "date": "2026-02-17", "status": "filled"}], "account": {"equity": 999569.27, "cash": 903911.76, "portfolio_value": 999569.27, "buying_power": 1903456.24}, "equity_curve": [{"date": "2026-02-18 09:03", "equity": 999779.6}, {"date": "2026-02-18 09:09", "equity": 999779.6}, {"date": "2026-02-18 09:22", "equity": 999606.38}, {"date": "2026-02-18 09:31", "equity": 999569.28}, {"date": "2026-02-18 09:42", "equity": 999569.34}, {"date": "2026-02-18 09:48", "equity": 999569.34}, {"date": "2026-02-18 09:58", "equity": 999569.27}, {"date": "2026-02-18 09:59", "equity": 999569.27}, {"date": "2026-02-18 10:03", "equity": 999569.27}], "metrics": {"portfolio_value": 999569.27, "cash": 903911.76, "buying_power": 1903456.24, "total_return_pct": -0.04307299999999814, "total_trades": 4, "win_rate": 0.0, "sharpe_ratio": -6.867958749115824, "max_drawdown": 0.021037636695123416}, "server_quotes": {}, "generated_utc": "2026-02-18 19:05:33"};
+    const DATA = {"positions": [{"symbol": "CRWD", "side": "long", "qty": 232.0, "entry_price": 413.960733, "current_price": 412.21, "market_value": 95632.72, "pnl": -406.170056, "pnl_pct": -0.42300000000000004}, {"symbol": "ETHUSD", "side": "short", "qty": 0.0, "entry_price": 1989.4, "current_price": 2016.83, "market_value": 24.789364, "pnl": 0.337149, "pnl_pct": 1.379}], "trades": [{"symbol": "CRWD", "side": "buy", "qty": 232.0, "price": 413.960733, "date": "2026-02-17", "status": "filled"}, {"symbol": "ETH/USD", "side": "buy", "qty": 0.0, "price": 1989.4, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "sell", "qty": 0.000356827, "price": 68441.72, "date": "2026-02-17", "status": "filled"}, {"symbol": "BTC/USD", "side": "buy", "qty": 0.0, "price": 68504.9, "date": "2026-02-17", "status": "filled"}], "open_orders": [], "account": {"equity": 999569.27, "cash": 903911.76, "portfolio_value": 999569.27, "buying_power": 1903456.24}, "equity_curve": [{"date": "2026-02-18 09:03", "equity": 999779.6, "isoDate": "2026-02-18T09:03:00"}, {"date": "2026-02-18 09:09", "equity": 999779.6, "isoDate": "2026-02-18T09:09:00"}, {"date": "2026-02-18 09:22", "equity": 999606.38, "isoDate": "2026-02-18T09:22:00"}, {"date": "2026-02-18 09:31", "equity": 999569.28, "isoDate": "2026-02-18T09:31:00"}, {"date": "2026-02-18 09:42", "equity": 999569.34, "isoDate": "2026-02-18T09:42:00"}, {"date": "2026-02-18 09:48", "equity": 999569.34, "isoDate": "2026-02-18T09:48:00"}, {"date": "2026-02-18 09:58", "equity": 999569.27, "isoDate": "2026-02-18T09:58:00"}, {"date": "2026-02-18 09:59", "equity": 999569.27, "isoDate": "2026-02-18T09:59:00"}, {"date": "2026-02-18 10:03", "equity": 999569.27, "isoDate": "2026-02-18T10:03:00"}], "intraday_equity": [{"time": "2026-02-19T14:30:00", "equity": 1000588.11}, {"time": "2026-02-19T14:45:00", "equity": 1000861.96}, {"time": "2026-02-19T15:00:00", "equity": 1001509.05}, {"time": "2026-02-19T15:15:00", "equity": 1001114.6}, {"time": "2026-02-19T15:30:00", "equity": 1001406.95}, {"time": "2026-02-19T15:45:00", "equity": 1001457.0}, {"time": "2026-02-19T16:00:00", "equity": 1001405.9}, {"time": "2026-02-19T16:15:00", "equity": 1001230.63}, {"time": "2026-02-19T16:30:00", "equity": 1001084.48}, {"time": "2026-02-19T16:45:00", "equity": 1000908.26}, {"time": "2026-02-19T17:00:00", "equity": 1001143.69}, {"time": "2026-02-19T17:15:00", "equity": 1001240.06}, {"time": "2026-02-19T17:30:00", "equity": 1001337.5}, {"time": "2026-02-19T17:45:00", "equity": 1001277.16}, {"time": "2026-02-19T18:00:00", "equity": 1000936.03}, {"time": "2026-02-19T18:15:00", "equity": 1001161.24}, {"time": "2026-02-19T18:30:00", "equity": 1001189.12}, {"time": "2026-02-19T18:45:00", "equity": 1001147.39}, {"time": "2026-02-19T19:00:00", "equity": 1001794.66}, {"time": "2026-02-19T19:15:00", "equity": 1001497.72}, {"time": "2026-02-19T19:30:00", "equity": 1001435.02}, {"time": "2026-02-19T19:45:00", "equity": 1001244.73}, {"time": "2026-02-19T20:00:00", "equity": 1001464.07}, {"time": "2026-02-19T20:15:00", "equity": 1001404.91}, {"time": "2026-02-19T20:30:00", "equity": 1001330.66}, {"time": "2026-02-19T20:45:00", "equity": 1001530.22}, {"time": "2026-02-19T21:00:00", "equity": 1002120.71}], "metrics": {"portfolio_value": 999569.27, "cash": 903911.76, "buying_power": 1903456.24, "total_return_pct": -0.04307299999999814, "total_trades": 4, "win_rate": 0.0, "sharpe_ratio": -6.867958749115824, "max_drawdown": 0.021037636695123416}, "server_quotes": {"CRWD": {"price": 350.33, "change": -39.47, "changePct": -10.1257, "previousClose": 389.8, "dayHigh": 393.0, "dayLow": 342.72, "volume": 76695571, "name": "CrowdStrike Holdings, Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 349.7, "postChange": -40.1, "postChangePct": -10.2873}, "ETHUSD": {"price": 1866.3013, "change": -92.334, "changePct": -4.7142, "previousClose": 1958.6353, "dayHigh": 1957.2991, "dayLow": 1843.1036, "volume": 29052027904, "name": "Ethereum USD", "marketState": "REGULAR", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 1867.8701, "postChange": -90.7651, "postChangePct": -4.6341}}, "generated_utc": "2026-02-23 22:15:35"};
 
     // ── Configuration ─────────────────────────────────────────────────────
     const REFRESH_INTERVAL = 5;           // seconds between price refreshes
@@ -447,16 +460,50 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 const vols   = result.indicators?.quote?.[0]?.volume || [];
                 const validHighs = highs.filter(v => v != null);
                 const validLows  = lows.filter(v => v != null);
+                const validCloses = closes.filter(v => v != null);
                 const totalVol   = vols.reduce((a,b) => a + (b||0), 0);
+
+                // Derive extended-hours prices from bar data when
+                // meta.postMarketPrice / meta.preMarketPrice are missing.
+                // The v8 chart with includePrePost=true has bars for
+                // 4 AM – 8 PM ET, so the last bar close reflects the
+                // actual latest price during extended sessions.
+                let postPrice  = meta.postMarketPrice || null;
+                let prePrice   = meta.preMarketPrice  || null;
+                const timestamps = result.timestamp || [];
+                const latestClose = validCloses.length > 0 ? validCloses[validCloses.length - 1] : null;
+
+                if (timestamps.length > 0 && latestClose != null) {
+                    const lastTs   = timestamps[timestamps.length - 1] * 1000;
+                    const lastBar  = new Date(lastTs);
+                    const etStr    = lastBar.toLocaleString('en-US', { timeZone: 'America/New_York' });
+                    const lastET   = new Date(etStr);
+                    const barMins  = lastET.getHours() * 60 + lastET.getMinutes();
+
+                    // Post-market bar (>= 16:00 ET) — use last bar close
+                    if (!postPrice && barMins >= 960) {
+                        postPrice = latestClose;
+                    }
+                    // Pre-market bar (4:00–9:29 AM ET) — use last bar close
+                    if (!prePrice && barMins >= 240 && barMins < 570) {
+                        prePrice = latestClose;
+                    }
+                }
+
+                const postChange    = postPrice ? postPrice - prevClose : null;
+                const postChangePct = (postPrice && prevClose) ? ((postPrice - prevClose) / prevClose) * 100 : null;
+                const preChange     = prePrice  ? prePrice  - prevClose : null;
+                const preChangePct  = (prePrice  && prevClose) ? ((prePrice  - prevClose) / prevClose) * 100 : null;
+
                 return {
                     price, change, changePct,
                     marketState:   meta.marketState || 'UNKNOWN',
-                    prePrice:      meta.preMarketPrice || null,
-                    preChange:     meta.preMarketPrice ? meta.preMarketPrice - prevClose : null,
-                    preChangePct:  meta.preMarketPrice && prevClose ? ((meta.preMarketPrice - prevClose)/prevClose)*100 : null,
-                    postPrice:     meta.postMarketPrice || null,
-                    postChange:    meta.postMarketPrice ? meta.postMarketPrice - prevClose : null,
-                    postChangePct: meta.postMarketPrice && prevClose ? ((meta.postMarketPrice - prevClose)/prevClose)*100 : null,
+                    prePrice,
+                    preChange,
+                    preChangePct,
+                    postPrice,
+                    postChange,
+                    postChangePct,
                     name:          meta.shortName || meta.symbol || yahooSym,
                     dayHigh:       validHighs.length ? Math.max(...validHighs) : null,
                     dayLow:        validLows.length  ? Math.min(...validLows) : null,
@@ -494,7 +541,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         const cards = [
             { label: 'Portfolio Value', value: fmtD(pv), cls: '' },
             { label: 'Cash', value: fmtD(a.cash), cls: '' },
-            { label: 'Day P&L', value: fmtD(dayPnl), cls: cls(dayPnl) },
+            { label: 'Total P&L', value: fmtD(pv - INITIAL_CAPITAL), cls: cls(pv - INITIAL_CAPITAL) },
             { label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) },
             { label: 'Open Positions', value: DATA.positions.length, cls: '' },
             { label: 'Trades Executed', value: m.total_trades, cls: '' },
@@ -526,7 +573,8 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         for (const p of DATA.positions) {
             const q = liveQuotes[p.symbol];
             const curPrice = effectivePrice(p.symbol, q) || p.current_price;
-            positionValue += curPrice * Math.abs(p.qty);
+            const mktVal = curPrice * Math.abs(p.qty);
+            positionValue += p.side === 'short' ? -mktVal : mktVal;
         }
         if (Object.keys(liveQuotes).length > 0 && DATA.positions.length > 0) {
             return DATA.account.cash + positionValue;
@@ -578,7 +626,8 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             const pnl = p.side === 'short'
                 ? (p.entry_price - curPrice) * Math.abs(p.qty)
                 : (curPrice - p.entry_price) * Math.abs(p.qty);
-            const pnlPct = (pnl / (p.entry_price * Math.abs(p.qty))) * 100;
+            const costBasis = p.entry_price * Math.abs(p.qty);
+            const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
             const mktVal = curPrice * Math.abs(p.qty);
             const pctOfPortfolio = pv > 0 ? (mktVal / pv) * 100 : 0;
             totalPnl += pnl;
@@ -617,15 +666,15 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 </td>
                 <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
                 <td>${Math.abs(p.qty)}</td>
-                <td>$$${fmt(p.entry_price)}</td>
+                <td>$${fmt(p.entry_price)}</td>
                 <td data-sym="${p.symbol}">
-                    $$${fmt(curPrice)}
+                    $${fmt(curPrice)}
                     ${ahBadge}
                 </td>
                 <td class="${dayChangePct != null ? cls(dayChangePct) : ''}">${dayChangePct != null ? fmtP(dayChangePct) : '—'}</td>
-                <td>$$${fmt(mktVal)}</td>
+                <td>$${fmt(mktVal)}</td>
                 <td>${fmt(pctOfPortfolio, 1)}%</td>
-                <td class="${cls(pnl)}">$$${fmt(pnl)}</td>
+                <td class="${cls(pnl)}">$${fmt(pnl)}</td>
                 <td class="${cls(pnlPct)}">${fmtP(pnlPct)}</td>
             </tr>`;
         }
@@ -641,9 +690,9 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 <tbody>${rows}</tbody>
                 <tfoot><tr>
                     <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
-                    <td style="font-weight:600;">$$${fmt(totalMktVal)}</td>
+                    <td style="font-weight:600;">$${fmt(totalMktVal)}</td>
                     <td style="font-weight:600;">${fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}%</td>
-                    <td class="${cls(totalPnl)}" style="font-weight:600;">$$${fmt(totalPnl)}</td>
+                    <td class="${cls(totalPnl)}" style="font-weight:600;">$${fmt(totalPnl)}</td>
                     <td></td>
                 </tr></tfoot>
             </table>`;
@@ -679,9 +728,9 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
             let priceInfo = '';
             if (q) {
                 priceInfo = `
-                    <span class="watch-price">$$${fmt(q.price)}</span>
+                    <span class="watch-price">$${fmt(q.price)}</span>
                     <span class="${cls(q.changePct)}">${fmtP(q.changePct)}</span>
-                    <span class="watch-detail-inline">H:$$${fmt(q.dayHigh)} L:$$${fmt(q.dayLow)}</span>
+                    <span class="watch-detail-inline">H:$${fmt(q.dayHigh)} L:$${fmt(q.dayLow)}</span>
                     <span class="watch-detail-inline">Vol:${q.volume ? (q.volume/1e6).toFixed(1)+'M' : '—'}</span>
                 `;
             }
@@ -728,6 +777,68 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         renderWatchlist();
     }
 
+    function renderOpenOrders() {
+        const orders = DATA.open_orders || [];
+        const section = document.getElementById('open-orders-section');
+        const countEl = document.getElementById('open-orders-count');
+        if (!orders.length) {
+            countEl.textContent = '0 orders';
+            document.getElementById('open-orders-table').innerHTML =
+                '<p class="muted">No open orders</p>';
+            return;
+        }
+        countEl.textContent = `${orders.length} order${orders.length > 1 ? 's' : ''}`;
+
+        let rows = orders.map(o => {
+            // Format price display based on order type
+            let priceDisplay = '—';
+            if (o.type === 'stop' && o.stop_price) {
+                priceDisplay = `Stop @ $${fmt(o.stop_price)}`;
+            } else if (o.type === 'limit' && o.limit_price) {
+                priceDisplay = `Limit @ $${fmt(o.limit_price)}`;
+            } else if (o.type === 'stop_limit') {
+                priceDisplay = `Stop $${fmt(o.stop_price || 0)} / Lim $${fmt(o.limit_price || 0)}`;
+            } else if (o.type === 'market') {
+                priceDisplay = 'Market';
+            } else {
+                priceDisplay = o.type || '—';
+            }
+
+            // Derive purpose from context
+            let purpose = '';
+            if (o.order_class === 'oto' || o.order_class === 'bracket') {
+                purpose = `<span class="badge badge-bracket">${o.order_class}</span>`;
+            } else if (o.type === 'stop') {
+                purpose = '<span class="badge badge-stoploss">stop-loss</span>';
+            } else if (o.type === 'limit') {
+                purpose = '<span class="badge badge-takeprofit">take-profit</span>';
+            }
+
+            const statusCls = o.status === 'accepted' || o.status === 'new' ? 'badge-open' : 'badge-filled';
+            const dateStr = o.submitted_at ? o.submitted_at.substring(0, 10) : '—';
+
+            return `
+                <tr>
+                    <td><strong>${o.symbol}</strong></td>
+                    <td><span class="badge badge-${o.side}">$${o.side ? o.side.toUpperCase() : '—'}</span></td>
+                    <td>${o.qty}</td>
+                    <td>${priceDisplay}</td>
+                    <td>${purpose}</td>
+                    <td>${dateStr}</td>
+                    <td><span class="badge ${statusCls}">${o.status}</span></td>
+                </tr>`;
+        }).join('');
+
+        document.getElementById('open-orders-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Price</th><th>Type</th><th>Submitted</th><th>Status</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
     function renderTrades() {
         const trades = DATA.trades;
         if (!trades.length) {
@@ -740,7 +851,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
                 <td><strong>${t.symbol}</strong></td>
                 <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
                 <td>${t.qty}</td>
-                <td>$$${fmt(t.price)}</td>
+                <td>$${fmt(t.price)}</td>
                 <td>${t.date}</td>
                 <td>${t.pnl_pct != null ? `<span class="${cls(t.pnl_pct)}">${fmtP(t.pnl_pct)}</span>` : '—'}</td>
                 <td><span class="badge badge-filled">${t.status}</span></td>
@@ -758,7 +869,11 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
     }
 
     // ── Intraday equity accumulator (dense, every 5s refresh) ──────────
-    let intradayEquity = [];  // dense intra-day points for 1D view
+    // Pre-populate from Alpaca 15-min portfolio history (so 1D chart works on fresh load)
+    let intradayEquity = (DATA.intraday_equity || []).map(p => ({
+        time: new Date(p.time),
+        equity: p.equity,
+    }));
 
     function getEquityDataForRange(range) {
         // For 1D, use intraday array if we have points
@@ -828,7 +943,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         const sign = diff >= 0 ? '+' : '';
         const color = diff >= 0 ? '#3fb950' : '#f85149';
         const rangeLabels = { '1d': 'Today', '1m': 'Past Month', '3m': 'Past 3 Months', '1y': 'Past Year', 'all': 'All Time' };
-        chEl.innerHTML = `<span style="color:${color}">${sign}$$${Math.abs(diff).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span>  <span class="equity-range-label">${rangeLabels[currentEquityRange] || ''}</span>`;
+        chEl.innerHTML = `<span style="color:${color}">${sign}$${Math.abs(diff).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span>  <span class="equity-range-label">${rangeLabels[currentEquityRange] || ''}</span>`;
         el.style.color = color;
     }
 
@@ -1104,6 +1219,7 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
         }
         renderMetrics();
         renderPositions();
+        renderOpenOrders();
         renderTrades();
         renderEquityChart();
         renderWatchlist();

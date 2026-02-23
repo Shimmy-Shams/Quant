@@ -180,6 +180,7 @@ class DashboardGenerator:
         try:
             positions = self._load_positions()
             trades = self._load_trades()
+            open_orders = self._load_open_orders()
             account = self._load_account()
             equity_curve = self._load_equity_curve()
             intraday = self._load_intraday_equity()
@@ -191,7 +192,7 @@ class DashboardGenerator:
             if server_quotes:
                 print(f"  Server-side quotes: {list(server_quotes.keys())}")
 
-            html = self._build_html(positions, trades, account, equity_curve, metrics, server_quotes, intraday)
+            html = self._build_html(positions, trades, account, equity_curve, metrics, server_quotes, intraday, open_orders)
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html)
@@ -265,6 +266,17 @@ class DashboardGenerator:
                 print(f"Error loading shadow positions: {e}")
 
         return positions
+
+    def _load_open_orders(self) -> List[Dict]:
+        """Load open orders from live_state.json"""
+        if self.live_state.exists():
+            try:
+                with open(self.live_state, "r") as f:
+                    live_data = json.load(f)
+                return live_data.get("open_orders", [])
+            except Exception as e:
+                print(f"Error loading open orders: {e}")
+        return []
 
     def _load_trades(self) -> List[Dict]:
         """Load recent trades"""
@@ -406,12 +418,14 @@ class DashboardGenerator:
         metrics: Dict,
         server_quotes: Optional[Dict] = None,
         intraday_equity: Optional[List[Dict]] = None,
+        open_orders: Optional[List[Dict]] = None,
     ) -> str:
         """Build the self-updating HTML dashboard"""
 
         data_blob = json.dumps({
             "positions": positions,
             "trades": trades,
+            "open_orders": open_orders or [],
             "account": account,
             "equity_curve": equity_curve,
             "intraday_equity": intraday_equity or [],
@@ -489,6 +503,15 @@ class DashboardGenerator:
             <p id="no-equity" class="muted" style="display:none;">
                 Equity curve data will appear after trading cycles accumulate snapshots.
             </p>
+        </div>
+
+        <!-- Open Orders -->
+        <div class="section" id="open-orders-section">
+            <div class="section-header">
+                <div class="section-title">Open Orders</div>
+                <div id="open-orders-count" class="timestamp"></div>
+            </div>
+            <div id="open-orders-table" class="table-wrap"></div>
         </div>
 
         <!-- Recent Trades -->
@@ -923,6 +946,68 @@ class DashboardGenerator:
         renderWatchlist();
     }}
 
+    function renderOpenOrders() {{
+        const orders = DATA.open_orders || [];
+        const section = document.getElementById('open-orders-section');
+        const countEl = document.getElementById('open-orders-count');
+        if (!orders.length) {{
+            countEl.textContent = '0 orders';
+            document.getElementById('open-orders-table').innerHTML =
+                '<p class="muted">No open orders</p>';
+            return;
+        }}
+        countEl.textContent = `${{orders.length}} order${{orders.length > 1 ? 's' : ''}}`;
+
+        let rows = orders.map(o => {{
+            // Format price display based on order type
+            let priceDisplay = '—';
+            if (o.type === 'stop' && o.stop_price) {{
+                priceDisplay = `Stop @ $${{fmt(o.stop_price)}}`;
+            }} else if (o.type === 'limit' && o.limit_price) {{
+                priceDisplay = `Limit @ $${{fmt(o.limit_price)}}`;
+            }} else if (o.type === 'stop_limit') {{
+                priceDisplay = `Stop $${{fmt(o.stop_price || 0)}} / Lim $${{fmt(o.limit_price || 0)}}`;
+            }} else if (o.type === 'market') {{
+                priceDisplay = 'Market';
+            }} else {{
+                priceDisplay = o.type || '—';
+            }}
+
+            // Derive purpose from context
+            let purpose = '';
+            if (o.order_class === 'oto' || o.order_class === 'bracket') {{
+                purpose = `<span class="badge badge-bracket">${{o.order_class}}</span>`;
+            }} else if (o.type === 'stop') {{
+                purpose = '<span class="badge badge-stoploss">stop-loss</span>';
+            }} else if (o.type === 'limit') {{
+                purpose = '<span class="badge badge-takeprofit">take-profit</span>';
+            }}
+
+            const statusCls = o.status === 'accepted' || o.status === 'new' ? 'badge-open' : 'badge-filled';
+            const dateStr = o.submitted_at ? o.submitted_at.substring(0, 10) : '—';
+
+            return `
+                <tr>
+                    <td><strong>${{o.symbol}}</strong></td>
+                    <td><span class="badge badge-${{o.side}}">$${{o.side ? o.side.toUpperCase() : '—'}}</span></td>
+                    <td>${{o.qty}}</td>
+                    <td>${{priceDisplay}}</td>
+                    <td>${{purpose}}</td>
+                    <td>${{dateStr}}</td>
+                    <td><span class="badge ${{statusCls}}">${{o.status}}</span></td>
+                </tr>`;
+        }}).join('');
+
+        document.getElementById('open-orders-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Price</th><th>Type</th><th>Submitted</th><th>Status</th>
+                </tr></thead>
+                <tbody>${{rows}}</tbody>
+            </table>`;
+    }}
+
     function renderTrades() {{
         const trades = DATA.trades;
         if (!trades.length) {{
@@ -1303,6 +1388,7 @@ class DashboardGenerator:
         }}
         renderMetrics();
         renderPositions();
+        renderOpenOrders();
         renderTrades();
         renderEquityChart();
         renderWatchlist();
@@ -1430,6 +1516,10 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
 .badge-sell   { background: #da3633; color: #fff; }
 .badge-filled { background: #1f6feb; color: #fff; }
 .badge-closed { background: #30363d; color: #8b949e; }
+.badge-open { background: #d29922; color: #fff; }
+.badge-stoploss { background: #da3633; color: #fff; font-size: 0.75em; }
+.badge-takeprofit { background: #238636; color: #fff; font-size: 0.75em; }
+.badge-bracket { background: #8957e5; color: #fff; font-size: 0.75em; }
 
 /* After-hours info */
 .ah-badge {

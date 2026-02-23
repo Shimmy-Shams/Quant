@@ -283,8 +283,8 @@ alpaca:
   data_feed: "iex"              # 'iex' (free) or 'sip' ($99/mo)
   lookback_days: 504            # Days of history for signal warmup
 
-  # Universe selection (free tier: max 30 symbols)
-  max_universe_size: 60
+  # Universe selection
+  max_universe_size: 100
   universe_source: "hurst"      # 'hurst' (rank by H exponent) or 'manual'
   manual_symbols: []            # Override: list specific symbols here
 
