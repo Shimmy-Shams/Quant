@@ -196,17 +196,17 @@ backtest:
   min_regime_multiplier: 0.5  # Don't trade if regime < this value
 
   # ─── News Event Filters (Tier 1 + Tier 2) ───────────────────────────
-  # NOTE: These are OFF by default. Enable for backtest/shadow testing first.
-  # Do NOT deploy to live VM until validated.
+  # Tier 2 disabled pending multi-week T1-only observation period.
+  # Re-enable after confirming T1 performance in live trading.
 
   # Tier 2: Earnings Avoidance (skip entries near earnings dates)
   earnings_blackout:
-    enabled: true                   # Enabled — shadow mode testing
+    enabled: false                  # Disabled — observing T1-only first
     blackout_days: 2                # Block entries within N days of earnings
 
   # Tier 1: Sentiment Penalty (reduce position size on negative news)
   sentiment_penalty:
-    enabled: true                   # Enabled — shadow mode testing
+    enabled: true                   # LIVE — deployed 2026-02-24
     penalty_floor: 0.5              # Minimum position-size multiplier
     negative_threshold: -0.3        # Aggregate score below this → penalty
     # Backtest proxy settings (uses price-action since we lack historical headlines)
