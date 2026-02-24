@@ -424,6 +424,41 @@ class AlpacaExecutor:
         )
         current_exposure_pct = total_exposure_value / equity if equity > 0 else 1.0
 
+        # ── Pre-initialize news filter modules ONCE (outside entry loop) ──
+        _ec = None
+        _ns = None
+        _blackout_days = 2
+        if getattr(config, 'earnings_blackout_enabled', False):
+            try:
+                from data.earnings_calendar import EarningsCalendar
+                from pathlib import Path
+                _ec = EarningsCalendar(Path(__file__).resolve().parent.parent.parent)
+                _blackout_days = getattr(config, 'earnings_blackout_days', 2)
+                # Pre-warm: batch-refresh earnings cache for all entry candidates
+                entry_candidates = [
+                    sym for sym in today_signals.index
+                    if sym not in current_positions or sym in exiting_symbols
+                ]
+                refreshed = _ec.refresh_batch(entry_candidates, delay=0.3)
+                if refreshed > 0:
+                    logger.info(f"📅 Earnings cache pre-warmed: {refreshed} symbols refreshed")
+            except Exception as e:
+                logger.debug(f"Earnings calendar init failed: {e}")
+                _ec = None
+
+        if getattr(config, 'sentiment_penalty_enabled', False):
+            try:
+                from data.news_sentiment import NewsSentiment
+                from pathlib import Path
+                _ns = NewsSentiment(
+                    Path(__file__).resolve().parent.parent.parent,
+                    penalty_floor=getattr(config, 'sentiment_penalty_floor', 0.5),
+                    negative_threshold=getattr(config, 'sentiment_negative_threshold', -0.3),
+                )
+            except Exception as e:
+                logger.debug(f"Sentiment module init failed: {e}")
+                _ns = None
+
         for symbol in today_signals.index:
             # Skip if already in position (unless exiting today)
             if symbol in current_positions and symbol not in exiting_symbols:
@@ -438,12 +473,8 @@ class AlpacaExecutor:
                 continue
 
             # Tier 2: Earnings blackout — skip entries near earnings
-            if getattr(config, 'earnings_blackout_enabled', False):
+            if _ec is not None:
                 try:
-                    from data.earnings_calendar import EarningsCalendar
-                    from pathlib import Path
-                    _ec = EarningsCalendar(Path(__file__).resolve().parent.parent.parent)
-                    _blackout_days = getattr(config, 'earnings_blackout_days', 2)
                     if _ec.has_upcoming_earnings(symbol, within_days=_blackout_days, reference_date=str(date.date())):
                         logger.info(
                             f"⛔ EARNINGS BLACKOUT: skipping {symbol} — "
@@ -491,15 +522,8 @@ class AlpacaExecutor:
             )
 
             # Tier 1: Sentiment penalty — reduce position on negative news
-            if getattr(config, 'sentiment_penalty_enabled', False):
+            if _ns is not None:
                 try:
-                    from data.news_sentiment import NewsSentiment
-                    from pathlib import Path
-                    _ns = NewsSentiment(
-                        Path(__file__).resolve().parent.parent.parent,
-                        penalty_floor=getattr(config, 'sentiment_penalty_floor', 0.5),
-                        negative_threshold=getattr(config, 'sentiment_negative_threshold', -0.3),
-                    )
                     _mult = _ns.get_sentiment_multiplier(symbol)
                     if _mult < 1.0:
                         logger.info(

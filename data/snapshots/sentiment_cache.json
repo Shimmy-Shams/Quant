@@ -1,0 +1,87 @@
+{
+  "AAPL": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:05.585777"
+  },
+  "CRWD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:05.690215"
+  },
+  "MSFT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:05.786203"
+  },
+  "NVDA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:05.947010"
+  },
+  "AMD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.066845"
+  },
+  "AMZN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.157418"
+  },
+  "TSLA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.286985"
+  },
+  "JPM": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.389501"
+  },
+  "DY": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.520881"
+  },
+  "ABNB": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-23T23:58:06.630179"
+  },
+  "HQY": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.084480"
+  },
+  "RYAN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.225660"
+  },
+  "KFY": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.393569"
+  },
+  "ADBE": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.564853"
+  },
+  "MCHP": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.744034"
+  },
+  "ADSK": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:55.948389"
+  },
+  "PATK": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-24T00:01:56.137100"
+  }
+}
