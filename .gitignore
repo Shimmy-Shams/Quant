@@ -54,3 +54,4 @@ venv/
 
 # DataAnalysisExpert temp
 DataAnalysisExpert/
+*.pkl
