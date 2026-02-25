@@ -101,6 +101,24 @@ class AnimatedReplay:
         self.position_history: List[Tuple[pd.Timestamp, int, int]] = []  # date, longs, shorts
         self.trade_markers: List[dict] = []  # For chart annotations
 
+        # Widget references for cleanup
+        self._widgets: List = []
+
+    def cleanup(self):
+        """Dispose widgets and free references to prevent memory leaks on rerun."""
+        import gc
+        for w in self._widgets:
+            try:
+                w.close()
+            except Exception:
+                pass
+        self._widgets.clear()
+        self.events.clear()
+        self.equity_history.clear()
+        self.position_history.clear()
+        self.trade_markers.clear()
+        gc.collect()
+
     def run(
         self,
         start_date: str = '2024-02-01',
@@ -540,6 +558,12 @@ class AnimatedReplay:
             log_label,
             log_output,
         ])
+
+        # Track all widgets for cleanup on rerun
+        self._widgets = [
+            fig_widget, log_output, progress_bar, stats_html,
+            header, chart_panel, stats_panel, top_row, log_label, controls_box,
+        ]
 
         return fig_widget, log_output, progress_bar, stats_html, controls_box
 

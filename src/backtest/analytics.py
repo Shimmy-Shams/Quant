@@ -584,8 +584,7 @@ class PerformanceAnalytics:
             print(f"Saved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
     # ==================================================================
     # 3B.3 — Trade-Level Analytics
@@ -736,8 +735,7 @@ class PerformanceAnalytics:
             print(f"\nSaved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
     # ==================================================================
     # 3B.4 — Turnover & Cost Analysis
@@ -1014,8 +1012,7 @@ class PerformanceAnalytics:
             print(f"\nSaved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
         # Key insights
         if print_report and regime_results:
@@ -1190,8 +1187,7 @@ class PerformanceAnalytics:
             print(f"\nSaved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
         return {r['index']: r.to_dict() for _, r in sector_df.iterrows()}
 
@@ -1281,8 +1277,7 @@ class PerformanceAnalytics:
             print(f"\nSaved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
         return df
 
@@ -1381,8 +1376,7 @@ class PerformanceAnalytics:
             print(f"\nSaved: {path}")
         if show:
             plt.show()
-        else:
-            plt.close(fig)
+        plt.close(fig)
 
         return flagged
 
