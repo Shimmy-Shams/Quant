@@ -178,11 +178,19 @@ class ConfigLoader:
         return BacktestConfig(
             initial_capital=self.get('backtest.initial_capital', 100000.0),
             use_log_returns=self.get('backtest.use_log_returns', True),
+            # Commission model
+            commission_model=self.get('backtest.commission_model', 'flat'),
             commission_pct=self.get('backtest.commission_pct', 0.001),
             slippage_pct=self.get('backtest.slippage_pct', 0.0005),
             position_size_method=self.get('backtest.position_size_method', 'equal_weight'),
             max_position_size=self.get('backtest.max_position_size', 0.1),
             max_total_exposure=self.get('backtest.max_total_exposure', 1.0),
+            # Capital compounding cap
+            max_sizing_equity=self.get('backtest.max_sizing_equity'),
+            # Data quality entry filters
+            min_entry_price=self.get('data_quality.min_price', 0.0),
+            min_entry_volume=self.get('data_quality.min_volume', 0),
+            exclude_symbols=self.get('data_quality.exclude_symbols', []) or [],
             # Signal-proportional params
             signal_prop_base_size=self.get('backtest.signal_proportional.base_size', 0.03),
             signal_prop_scale_factor=self.get('backtest.signal_proportional.scale_factor', 0.02),
@@ -223,6 +231,12 @@ class ConfigLoader:
             # Regime filter
             use_regime_filter=self.get('backtest.use_regime_filter', True),
             min_regime_multiplier=self.get('backtest.min_regime_multiplier', 0.5),
+
+            # CVaR daily kill switch
+            use_cvar_kill_switch=self.get('backtest.cvar_kill_switch.enabled', False),
+            cvar_lookback=self.get('backtest.cvar_kill_switch.lookback', 252),
+            cvar_confidence=self.get('backtest.cvar_kill_switch.confidence', 0.05),
+            cvar_multiplier=self.get('backtest.cvar_kill_switch.multiplier', 1.5),
 
             # News filters (Tier 1 + Tier 2)
             earnings_blackout_enabled=self.get('backtest.earnings_blackout.enabled', False),

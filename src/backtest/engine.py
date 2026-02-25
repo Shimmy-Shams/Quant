@@ -26,7 +26,9 @@ class BacktestConfig:
     use_log_returns: bool = True  # Log returns for metrics (Sharpe, Sortino, etc.)
 
     # Transaction costs
-    commission_pct: float = 0.001  # 0.1% per trade
+    # Commission model: 'flat' (pct-based), 'ib_tiered', 'ib_fixed', 'zero' (Alpaca)
+    commission_model: str = 'flat'
+    commission_pct: float = 0.001  # 0.1% per trade (used when commission_model='flat')
     slippage_pct: float = 0.0005   # 0.05% slippage
 
     # Position sizing method: equal_weight, signal_proportional, volatility_scaled, kelly
@@ -76,12 +78,33 @@ class BacktestConfig:
     time_decay_days: int = 10             # Check after N days
     time_decay_threshold: float = 0.01    # Exit if |pnl| < this (1%)
 
+    # Capital compounding cap
+    # Caps the equity base used for position sizing to prevent runaway compounding.
+    # None = uncapped (compound freely).
+    # A float value (e.g., 500_000) caps sizing at that dollar amount regardless
+    # of how large equity grows. Profits above this cap accumulate in cash and
+    # are reflected in equity, but new position sizes stay bounded.
+    max_sizing_equity: Optional[float] = None
+
+    # Data quality entry filters (skip entries on illiquid/penny stocks)
+    min_entry_price: float = 0.0        # Skip entries where close < this ($5 recommended)
+    min_entry_volume: int = 0           # Skip entries where volume < this (50,000 recommended)
+    exclude_symbols: List[str] = field(default_factory=list)  # Symbols to never trade
+
     # Execution price model: 'close' (default) or 'vwap'
     execution_price: str = 'close'
 
     # Regime filter
     use_regime_filter: bool = True
     min_regime_multiplier: float = 0.5  # Don't trade if regime < this
+
+    # CVaR daily kill switch — closes all positions when daily loss exceeds threshold
+    # Uses rolling CVaR (Expected Shortfall at 5th percentile) to close all positions
+    # and block new entries on extreme loss days, then resumes next day.
+    use_cvar_kill_switch: bool = False
+    cvar_lookback: int = 252          # Rolling window for CVaR estimation (days)
+    cvar_confidence: float = 0.05     # Tail percentile (5% = 95th confidence level)
+    cvar_multiplier: float = 1.5      # Kill when daily loss > multiplier × CVaR
 
     # News filters (Tier 1 + Tier 2)
     # Tier 2: Earnings avoidance — skip entries near earnings
@@ -198,6 +221,66 @@ class BacktestEngine:
     def __init__(self, config: Optional[BacktestConfig] = None):
         self.config = config or BacktestConfig()
         self._completed_trades: List[Trade] = []  # For Kelly rolling calculations
+        self._monthly_share_volume: float = 0.0   # Track for IB tiered pricing
+        self._current_month: int = -1              # Track month transitions
+
+    def _calculate_commission(self, shares: float, price: float, trade_date=None) -> float:
+        """
+        Calculate commission for a single trade leg (entry or exit).
+
+        Models:
+        - 'flat': commission_pct * trade_value  (legacy)
+        - 'ib_tiered': IB tiered per-share pricing, min $0.35, max 1% of value
+        - 'ib_fixed': IB fixed $0.005/share, min $1.00, max 1% of value
+        - 'zero': $0 (commission-free, e.g., Alpaca)
+        """
+        cfg = self.config
+        model = cfg.commission_model
+        trade_value = shares * price
+
+        if model == 'zero':
+            return 0.0
+
+        elif model == 'flat':
+            return trade_value * cfg.commission_pct
+
+        elif model == 'ib_fixed':
+            # IB Fixed: $0.005/share, min $1.00, max 1% of trade value
+            comm = shares * 0.005
+            comm = max(comm, 1.00)
+            comm = min(comm, trade_value * 0.01)
+            return comm
+
+        elif model == 'ib_tiered':
+            # IB Tiered: per-share rate based on monthly volume
+            # Track cumulative monthly volume for tier selection
+            if trade_date is not None:
+                month = trade_date.month if hasattr(trade_date, 'month') else -1
+                if month != self._current_month:
+                    self._current_month = month
+                    self._monthly_share_volume = 0.0
+            self._monthly_share_volume += shares
+
+            vol = self._monthly_share_volume
+            if vol <= 300_000:
+                rate = 0.0035
+            elif vol <= 3_000_000:
+                rate = 0.0020
+            elif vol <= 20_000_000:
+                rate = 0.0015
+            elif vol <= 100_000_000:
+                rate = 0.0010
+            else:
+                rate = 0.0005
+
+            comm = shares * rate
+            comm = max(comm, 0.35)            # Min per order
+            comm = min(comm, trade_value * 0.01)  # Max 1% of trade value
+            return comm
+
+        else:
+            # Fallback to flat
+            return trade_value * cfg.commission_pct
 
     def _precompute_vol_sizes(self, price_arr: np.ndarray) -> np.ndarray:
         """
@@ -379,6 +462,20 @@ class BacktestEngine:
         else:
             regime_arr = None
 
+        # Volume array (for entry quality filters)
+        if volume_data is not None:
+            vol_df = volume_data.reindex(index=dates, columns=sym_list)
+            volume_arr = vol_df.values.astype(np.float64)
+        else:
+            volume_arr = None
+
+        # Excluded symbols set (pre-compute for O(1) lookup)
+        excluded_sym_idx = set()
+        if cfg.exclude_symbols:
+            for s in cfg.exclude_symbols:
+                if s in sym_to_idx:
+                    excluded_sym_idx.add(sym_to_idx[s])
+
         # --- Pre-compute position sizes ---
         if cfg.position_size_method == 'volatility_scaled':
             vol_sizes = self._precompute_vol_sizes(price_arr)
@@ -498,7 +595,11 @@ class BacktestEngine:
 
         # Track open positions: {sym_idx: dict}
         open_positions = {}
-        txn_cost_rate = cfg.commission_pct + cfg.slippage_pct
+        # Slippage is always a pct deduction from trade value (separate from commission)
+        slippage_rate = cfg.slippage_pct
+        # Reset IB monthly volume tracker
+        self._monthly_share_volume = 0.0
+        self._current_month = -1
 
         # --- Main loop (minimal Python, NumPy arrays only) ---
         for i in range(1, n_days):
@@ -516,6 +617,85 @@ class BacktestEngine:
                 filt_signals[mask] = 0.0
             else:
                 filt_signals = signals_today
+
+            # --- CVaR DAILY KILL SWITCH ---
+            # If yesterday's portfolio loss exceeded the rolling CVaR threshold,
+            # liquidate all positions immediately and skip new entries today.
+            cvar_killed = False
+            if cfg.use_cvar_kill_switch and i >= cfg.cvar_lookback + 1:
+                # Compute yesterday's daily return
+                prev_equity = equity_arr[i - 1]
+                prev_prev_equity = equity_arr[i - 2] if i >= 2 else prev_equity
+                if prev_prev_equity > 0:
+                    yesterday_return = (prev_equity - prev_prev_equity) / prev_prev_equity
+                else:
+                    yesterday_return = 0.0
+
+                # Rolling CVaR: expected shortfall at the tail
+                window_start = max(1, i - cfg.cvar_lookback)
+                hist_returns = np.diff(equity_arr[window_start - 1:i]) / np.maximum(equity_arr[window_start - 1:i - 1], 1.0)
+                hist_returns = hist_returns[np.isfinite(hist_returns)]
+                if len(hist_returns) >= 20:
+                    cutoff = np.percentile(hist_returns, cfg.cvar_confidence * 100)
+                    tail = hist_returns[hist_returns <= cutoff]
+                    cvar = float(np.mean(tail)) if len(tail) > 0 else cutoff
+                    threshold = cvar * cfg.cvar_multiplier  # e.g., 1.5 × CVaR
+
+                    if yesterday_return < threshold:
+                        cvar_killed = True
+                        # Force-exit all positions at today's open (execution price)
+                        for sym_idx in list(open_positions.keys()):
+                            px = prices_today[sym_idx]
+                            if np.isnan(px):
+                                continue
+                            pos = open_positions[sym_idx]
+                            shares_abs = abs(pos['shares'])
+                            entry_px = pos['entry_price']
+                            side = pos['side']
+                            entry_date_idx_val = pos['entry_date_idx']
+                            try:
+                                holding_days = (dates[i] - dates[entry_date_idx_val]).days
+                            except (AttributeError, TypeError):
+                                holding_days = i - entry_date_idx_val
+                            if side == 'long':
+                                gross_pnl = (px - entry_px) * shares_abs
+                            else:
+                                gross_pnl = (entry_px - px) * shares_abs
+
+                            entry_comm = self._calculate_commission(shares_abs, entry_px, dates[entry_date_idx_val])
+                            entry_slip = shares_abs * entry_px * slippage_rate
+                            exit_comm = self._calculate_commission(shares_abs, px, dates[i])
+                            exit_slip = shares_abs * px * slippage_rate
+                            total_comm = entry_comm + exit_comm + entry_slip + exit_slip
+                            net_pnl = gross_pnl - total_comm
+                            pnl_pct_final = net_pnl / (shares_abs * entry_px) if entry_px > 0 else 0.0
+
+                            trade = Trade(
+                                symbol=sym_list[sym_idx],
+                                entry_date=dates[entry_date_idx_val],
+                                exit_date=dates[i],
+                                entry_price=entry_px,
+                                exit_price=px,
+                                shares=shares_abs,
+                                side=side,
+                                pnl=net_pnl,
+                                pnl_pct=pnl_pct_final,
+                                commission=total_comm,
+                                holding_days=holding_days,
+                                entry_signal=pos['entry_signal'],
+                                exit_signal=0.0,
+                                exit_reason='cvar_kill',
+                            )
+                            trades.append(trade)
+                            self._completed_trades.append(trade)
+
+                            if side == 'long':
+                                current_cash += shares_abs * px - (exit_comm + exit_slip)
+                            else:
+                                current_cash -= shares_abs * px + (exit_comm + exit_slip)
+                            prev_positions[sym_idx] = 0.0
+
+                        open_positions.clear()
 
             # --- EXIT LOOP ---
             for sym_idx in list(open_positions.keys()):
@@ -611,9 +791,11 @@ class BacktestEngine:
                     else:
                         gross_pnl = (entry_px - px) * shares_abs
 
-                    entry_comm = shares_abs * entry_px * txn_cost_rate
-                    exit_comm = shares_abs * px * txn_cost_rate
-                    total_comm = entry_comm + exit_comm
+                    entry_comm = self._calculate_commission(shares_abs, entry_px, dates[entry_date_idx])
+                    entry_slip = shares_abs * entry_px * slippage_rate
+                    exit_comm = self._calculate_commission(shares_abs, px, dates[i])
+                    exit_slip = shares_abs * px * slippage_rate
+                    total_comm = entry_comm + exit_comm + entry_slip + exit_slip
                     net_pnl = gross_pnl - total_comm
                     pnl_pct_final = net_pnl / (shares_abs * entry_px)
 
@@ -645,10 +827,27 @@ class BacktestEngine:
                     del open_positions[sym_idx]
 
             # --- ENTRY LOOP ---
+            # Skip all new entries if CVaR kill switch triggered today
+            if cvar_killed:
+                # Store day results (positions already cleared above)
+                positions_arr[i] = prev_positions
+                cash_arr[i] = current_cash
+                pos_vals = np.nansum(prev_positions * close_today)
+                equity_arr[i] = current_cash + pos_vals
+                daily_n_positions[i] = 0
+                if equity_arr[i] > 0:
+                    daily_exposure[i] = 0.0
+                continue  # Skip to next day
+
             # Compute equity for position sizing (prevents leverage spiral)
             position_values = np.nansum(prev_positions * close_today)
             current_equity = current_cash + position_values
-            portfolio_value = max(current_equity, 0.0)
+            # Cap sizing equity to prevent runaway compounding
+            # (actual equity is tracked separately in equity_arr for P&L)
+            if cfg.max_sizing_equity is not None:
+                portfolio_value = min(max(current_equity, 0.0), cfg.max_sizing_equity)
+            else:
+                portfolio_value = max(current_equity, 0.0)
 
             # Total current exposure (valued at close for consistency)
             total_exposure = np.nansum(np.abs(prev_positions) * close_today)
@@ -658,11 +857,25 @@ class BacktestEngine:
                 if prev_positions[sym_idx] != 0.0:
                     continue  # Already have a position
 
+                # Excluded symbols (permanent blacklist)
+                if sym_idx in excluded_sym_idx:
+                    continue
+
                 sig = filt_signals[sym_idx]
                 px = prices_today[sym_idx]
 
                 if np.isnan(sig) or np.isnan(px) or px <= 0:
                     continue
+
+                # Data quality: minimum price filter
+                if cfg.min_entry_price > 0 and px < cfg.min_entry_price:
+                    continue
+
+                # Data quality: minimum volume filter
+                if cfg.min_entry_volume > 0 and volume_arr is not None:
+                    vol_today = volume_arr[i, sym_idx]
+                    if np.isnan(vol_today) or vol_today < cfg.min_entry_volume:
+                        continue
 
                 if abs(sig) <= cfg.entry_threshold:
                     continue
@@ -709,18 +922,20 @@ class BacktestEngine:
                     if lookback_px > 0 and (px - lookback_px) / lookback_px > cfg.short_accel_threshold:
                         continue  # Stock surged — skip this short entry
 
-                # Entry commission
-                entry_comm = shares * px * txn_cost_rate
+                # Entry commission + slippage
+                entry_comm = self._calculate_commission(shares, px, dates[i])
+                entry_slip = shares * px * slippage_rate
+                entry_cost = entry_comm + entry_slip
 
                 # Cash/margin check
-                if pos_value + entry_comm > portfolio_value:
+                if pos_value + entry_cost > portfolio_value:
                     continue
 
                 if side == 'long':
-                    current_cash -= shares * px + entry_comm
+                    current_cash -= shares * px + entry_cost
                     prev_positions[sym_idx] = shares
                 else:
-                    current_cash += shares * px - entry_comm
+                    current_cash += shares * px - entry_cost
                     prev_positions[sym_idx] = -shares
 
                 open_positions[sym_idx] = {

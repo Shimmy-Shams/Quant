@@ -108,8 +108,13 @@ backtest:
   use_log_returns: true     # Use log returns for metrics (Sharpe, Sortino, etc.)
 
   # Transaction Costs
-  commission_pct: 0.001     # 0.1% commission per trade
-  slippage_pct: 0.0005      # 0.05% slippage
+  # Commission model: 'flat' (pct-based), 'ib_tiered', 'ib_fixed', 'zero' (Alpaca)
+  # IB Tiered: per-share rate based on monthly volume ($0.0035 → $0.0005)
+  # IB Fixed: $0.005/share, min $1.00, max 1% of trade value
+  # 'flat': uses commission_pct as a simple percentage of trade value
+  commission_model: "ib_tiered"  # Realistic IB pricing for backtest
+  commission_pct: 0.001     # Only used when commission_model='flat' (0.1%)
+  slippage_pct: 0.0010      # 0.10% slippage (conservative; was 0.05%)
 
   # Execution Price Model: 'close' (default) or 'vwap'
   # 'vwap' uses volume-weighted average price for entries/exits (more realistic)
@@ -121,6 +126,9 @@ backtest:
   position_size_method: "volatility_scaled"
   max_position_size: 0.15   # Max 15% of capital per position (Config F: was 0.10)
   max_total_exposure: 1.0   # Max 100% total exposure
+  max_sizing_equity: 500000  # Cap equity used for position sizing ($500K)
+                             # Prevents runaway compounding (real equity still tracked)
+                             # null = uncapped (original behavior)
 
   # Signal-proportional sizing params
   signal_proportional:
@@ -199,6 +207,13 @@ backtest:
   # Regime Filter
   use_regime_filter: true
   min_regime_multiplier: 0.5  # Don't trade if regime < this value
+
+  # CVaR Daily Kill Switch (liquidate all on extreme loss days)
+  cvar_kill_switch:
+    enabled: true
+    lookback: 252             # Rolling window for CVaR estimation (days)
+    confidence: 0.05          # Tail percentile (5% = 95th confidence)
+    multiplier: 1.5           # Kill when daily loss > multiplier × CVaR
 
   # ─── News Event Filters (Tier 1 + Tier 2) ───────────────────────────
   # Tier 2 disabled pending multi-week T1-only observation period.
@@ -296,6 +311,20 @@ logging:
   # Progress updates
   show_progress: true
   progress_interval: 50     # Print progress every N symbols
+
+
+# =============================================================================
+# DATA QUALITY FILTERS
+# =============================================================================
+# Entry-level filters applied during backtest/replay to skip illiquid/penny stocks
+data_quality:
+  min_price: 5.0              # Skip entries where close < $5
+  min_volume: 50000           # Skip entries where daily volume < 50K shares
+  exclude_symbols:            # Symbols to never trade (persistent losers/illiquid)
+    - "LUMN"                  # Lost $32K, 48% WR — structurally broken for MR
+    - "HELE"                  # Lost $18K, 33% WR — very low win rate
+    - "PATK"                  # Triple-flagged: price jumps + zero volume + sub-dollar
+    - "PECO"                  # 7% zero-volume days — illiquid
 
 
 # =============================================================================
