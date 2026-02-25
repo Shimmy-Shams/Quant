@@ -531,6 +531,7 @@ def _save_live_state(conn: AlpacaConnection) -> None:
                     "stop_price": order.get("stop_price"),
                     "limit_price": order.get("limit_price"),
                     "order_class": order.get("order_class"),
+                    "time_in_force": order.get("time_in_force"),
                     "status": order.get("status", "open"),
                     "submitted_at": order.get("submitted_at", "")[:19],
                     "order_id": order["id"],

@@ -949,6 +949,7 @@ class DashboardGenerator:
 
     function renderOpenOrders() {{
         const orders = DATA.open_orders || [];
+        const positions = DATA.positions || [];
         const section = document.getElementById('open-orders-section');
         const countEl = document.getElementById('open-orders-count');
         if (!orders.length) {{
@@ -958,6 +959,10 @@ class DashboardGenerator:
             return;
         }}
         countEl.textContent = `${{orders.length}} order${{orders.length > 1 ? 's' : ''}}`;
+
+        // Build position lookup for matching stops to positions
+        const posMap = {{}};
+        positions.forEach(p => {{ posMap[p.symbol] = p; }});
 
         let rows = orders.map(o => {{
             // Format price display based on order type
@@ -974,14 +979,34 @@ class DashboardGenerator:
                 priceDisplay = o.type || '—';
             }}
 
-            // Derive purpose from context
+            // Derive purpose from context — Option D: standalone GTC stops
             let purpose = '';
-            if (o.order_class === 'oto' || o.order_class === 'bracket') {{
+            const pos = posMap[o.symbol];
+            if (o.type === 'stop' && o.order_class !== 'bracket' && o.order_class !== 'oto') {{
+                // Standalone GTC stop-loss (Option D)
+                const tifLabel = (o.time_in_force === 'gtc') ? 'GTC' : (o.time_in_force || '');
+                purpose = `<span class="badge badge-stoploss">${{tifLabel}} stop-loss</span>`;
+                // Show distance from current price if position exists
+                if (pos && pos.current_price && o.stop_price) {{
+                    const curr = parseFloat(pos.current_price);
+                    const sl = parseFloat(o.stop_price);
+                    const dist = Math.abs(curr - sl) / curr * 100;
+                    priceDisplay += ` <span class="muted">${{dist.toFixed(1)}}% away</span>`;
+                }}
+            }} else if (o.order_class === 'oto' || o.order_class === 'bracket') {{
                 purpose = `<span class="badge badge-bracket">${{o.order_class}}</span>`;
-            }} else if (o.type === 'stop') {{
-                purpose = '<span class="badge badge-stoploss">stop-loss</span>';
             }} else if (o.type === 'limit') {{
                 purpose = '<span class="badge badge-takeprofit">take-profit</span>';
+            }} else {{
+                purpose = `<span class="badge badge-open">${{o.type || 'order'}}</span>`;
+            }}
+
+            // Position context column — show which position this protects
+            let protects = '—';
+            if (pos) {{
+                const sideLabel = pos.side === 'long' ? '▲L' : '▼S';
+                const sideColor = pos.side === 'long' ? 'badge-buy' : 'badge-sell';
+                protects = `<span class="badge ${{sideColor}}">${{sideLabel}}</span> x${{Math.abs(pos.qty)}}`;
             }}
 
             const statusCls = o.status === 'accepted' || o.status === 'new' ? 'badge-open' : 'badge-filled';
@@ -990,8 +1015,7 @@ class DashboardGenerator:
             return `
                 <tr>
                     <td><strong>${{o.symbol}}</strong></td>
-                    <td><span class="badge badge-${{o.side}}">$${{o.side ? o.side.toUpperCase() : '—'}}</span></td>
-                    <td>${{o.qty}}</td>
+                    <td>${{protects}}</td>
                     <td>${{priceDisplay}}</td>
                     <td>${{purpose}}</td>
                     <td>${{dateStr}}</td>
@@ -1002,7 +1026,7 @@ class DashboardGenerator:
         document.getElementById('open-orders-table').innerHTML = `
             <table>
                 <thead><tr>
-                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Symbol</th><th>Protects</th>
                     <th>Price</th><th>Type</th><th>Submitted</th><th>Status</th>
                 </tr></thead>
                 <tbody>${{rows}}</tbody>

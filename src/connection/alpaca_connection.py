@@ -453,6 +453,7 @@ class AlpacaConnection:
             'stop_price': float(o.stop_price) if o.stop_price else None,
             'limit_price': float(o.limit_price) if o.limit_price else None,
             'order_class': o.order_class.value if o.order_class else None,
+            'time_in_force': o.time_in_force.value if o.time_in_force else None,
         } for o in orders]
 
     def submit_stop_order(
