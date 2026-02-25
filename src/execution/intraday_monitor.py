@@ -591,6 +591,15 @@ class IntradayMonitor:
 
             try:
                 if self.mode == TradingMode.LIVE:
+                    # Cancel any existing stop orders for this symbol first
+                    # (prevents orphaned stops after our market exit fills)
+                    cancelled = self.conn.cancel_orders_for_symbol(sym)
+                    if cancelled:
+                        logger.info(
+                            f"🗑️ Cancelled {cancelled} open order(s) for {sym} "
+                            f"before exit"
+                        )
+
                     # Submit market exit order
                     exit_side = "sell" if side == "long" else "buy"
                     order = self.conn.submit_market_order(

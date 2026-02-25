@@ -145,7 +145,16 @@ class AlpacaExecutor:
         decision: TradeDecision,
         current_prices: pd.Series,
     ) -> TradeResult:
-        """Execute a single trade decision, optionally with bracket (SL/TP) legs."""
+        """Execute a single trade decision.
+
+        For entries with stop_loss_pct configured:
+          1. Submit a plain market order
+          2. Poll until filled (up to ~30s)
+          3. Submit a standalone GTC stop order at the computed SL price
+
+        This replaces the old bracket-order approach so stops are clearly
+        visible as independent orders in Alpaca's UI.
+        """
         try:
             if decision.target_qty <= 0:
                 return TradeResult(
@@ -156,46 +165,47 @@ class AlpacaExecutor:
                 )
 
             price = current_prices.get(decision.symbol, 0)
-
-            # ── Use bracket order for entries when SL is configured ──
             is_entry = decision.action in ('buy', 'short')
-            use_bracket = is_entry and self.stop_loss_pct is not None and price > 0
+            is_exit = decision.action in ('sell', 'cover')
 
-            if use_bracket:
-                from execution.intraday_monitor import IntradayMonitor  # lazy to avoid circular import
-                direction = 'long' if decision.action == 'buy' else 'short'
-                bracket = IntradayMonitor.compute_bracket_prices(
-                    entry_price=price,
-                    side=direction,
-                    stop_loss_pct=self.stop_loss_pct,
-                    take_profit_pct=self.take_profit_pct,
-                )
-                sl_price = bracket['stop_loss_price']
-                tp_price = bracket['take_profit_price']
-                order = self.connection.submit_bracket_order(
+            # ── For exits: cancel existing stop orders first ──
+            if is_exit and self.connection.config.trading_mode == TradingMode.LIVE:
+                cancelled = self.connection.cancel_orders_for_symbol(decision.symbol)
+                if cancelled:
+                    logger.info(
+                        f"🗑️ Cancelled {cancelled} open order(s) for "
+                        f"{decision.symbol} before exit"
+                    )
+
+            # ── Submit market order (entries and exits alike) ──
+            order = self.connection.submit_market_order(
+                symbol=decision.symbol,
+                qty=decision.target_qty,
+                side=decision.side,
+            )
+
+            order_id = order['id']
+            order_status = order['status']
+            filled_price = order.get('filled_avg_price') or price
+
+            # ── For entries: attach a standalone stop-loss after fill ──
+            if is_entry and self.stop_loss_pct is not None and price > 0:
+                filled_price = self._attach_stop_after_fill(
+                    order_id=order_id,
                     symbol=decision.symbol,
                     qty=decision.target_qty,
-                    side=decision.side,
-                    stop_loss_price=sl_price,
-                    take_profit_price=tp_price,
-                )
-                tp_str = f"TP=${tp_price:.2f}" if tp_price else "no TP"
-                logger.info(f"Bracket order {decision.symbol}: SL=${sl_price:.2f} {tp_str}")
-            else:
-                order = self.connection.submit_market_order(
-                    symbol=decision.symbol,
-                    qty=decision.target_qty,
-                    side=decision.side,
+                    action=decision.action,
+                    estimated_price=price,
                 )
 
             # Estimate commission
-            commission = price * decision.target_qty * self.commission_pct
+            commission = (filled_price or price) * decision.target_qty * self.commission_pct
 
             return TradeResult(
                 decision=decision,
-                order_id=order['id'],
-                status=order['status'],
-                filled_price=order.get('filled_avg_price') or price,
+                order_id=order_id,
+                status=order_status,
+                filled_price=filled_price or price,
                 filled_qty=decision.target_qty,
                 commission=commission,
             )
@@ -208,6 +218,95 @@ class AlpacaExecutor:
                 status='error',
                 error_message=str(e),
             )
+
+    def _attach_stop_after_fill(
+        self,
+        order_id: str,
+        symbol: str,
+        qty: int,
+        action: str,
+        estimated_price: float,
+        max_wait_sec: float = 30.0,
+        poll_interval: float = 1.0,
+    ) -> Optional[float]:
+        """Poll for entry fill, then submit a standalone GTC stop order.
+
+        Returns the actual filled price (or estimated if polling times out).
+        """
+        import time as _time
+
+        if self.connection.config.trading_mode != TradingMode.LIVE:
+            # Shadow/replay — compute and log the stop but don't submit
+            from execution.intraday_monitor import IntradayMonitor
+            direction = 'long' if action == 'buy' else 'short'
+            bracket = IntradayMonitor.compute_bracket_prices(
+                entry_price=estimated_price,
+                side=direction,
+                stop_loss_pct=self.stop_loss_pct,
+                take_profit_pct=self.take_profit_pct,
+            )
+            logger.info(
+                f"🛡️ [SIM] Stop would be placed for {symbol}: "
+                f"SL=${bracket['stop_loss_price']:.2f}"
+            )
+            return estimated_price
+
+        # ── Poll for fill ──────────────────────────────────────────
+        filled_price = None
+        deadline = _time.time() + max_wait_sec
+
+        while _time.time() < deadline:
+            order_info = self.connection.get_order_by_id(order_id)
+            if order_info and order_info.get('status') == 'filled':
+                filled_price = order_info.get('filled_avg_price') or estimated_price
+                logger.info(
+                    f"✅ {symbol} entry filled @ ${filled_price:.2f}"
+                )
+                break
+            _time.sleep(poll_interval)
+
+        if filled_price is None:
+            # Timed out — use estimated price; stop will still be placed
+            logger.warning(
+                f"⏱️ {symbol} fill not confirmed in {max_wait_sec}s, "
+                f"placing stop using estimated price ${estimated_price:.2f}"
+            )
+            filled_price = estimated_price
+
+        # ── Compute stop-loss price ────────────────────────────────
+        from execution.intraday_monitor import IntradayMonitor
+        direction = 'long' if action == 'buy' else 'short'
+        bracket = IntradayMonitor.compute_bracket_prices(
+            entry_price=filled_price,
+            side=direction,
+            stop_loss_pct=self.stop_loss_pct,
+            take_profit_pct=self.take_profit_pct,
+        )
+        sl_price = bracket['stop_loss_price']
+
+        # ── Submit standalone GTC stop order ───────────────────────
+        exit_side = 'sell' if action == 'buy' else 'buy'
+        try:
+            stop_order = self.connection.submit_stop_order(
+                symbol=symbol,
+                qty=qty,
+                side=exit_side,
+                stop_price=sl_price,
+                time_in_force='gtc',
+            )
+            logger.info(
+                f"🛡️ Stop-loss placed: {symbol} {exit_side.upper()} "
+                f"x{qty} @ stop=${sl_price:.2f} "
+                f"(entry=${filled_price:.2f}, {self.stop_loss_pct:.0%}) "
+                f"→ {stop_order['status']}"
+            )
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to place stop for {symbol}: {e} — "
+                f"position is UNPROTECTED, will retry on next startup"
+            )
+
+        return filled_price
 
     def _risk_check(
         self,

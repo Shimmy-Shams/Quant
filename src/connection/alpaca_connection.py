@@ -521,6 +521,46 @@ class AlpacaConnection:
         all_open = self.get_orders(status='open', limit=100)
         return [o for o in all_open if o.get('symbol') == symbol]
 
+    def get_order_by_id(self, order_id: str) -> Optional[Dict]:
+        """Get a single order by its ID."""
+        try:
+            o = self.trading_client.get_order_by_id(order_id)
+            return {
+                'id': str(o.id),
+                'symbol': o.symbol,
+                'qty': float(o.qty) if o.qty else None,
+                'side': o.side.value if o.side else None,
+                'type': o.type.value if o.type else None,
+                'status': o.status.value if o.status else None,
+                'filled_at': str(o.filled_at) if o.filled_at else None,
+                'filled_avg_price': float(o.filled_avg_price) if o.filled_avg_price else None,
+                'filled_qty': float(o.filled_qty) if o.filled_qty else None,
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to get order {order_id}: {e}")
+            return None
+
+    def cancel_order_by_id(self, order_id: str) -> bool:
+        """Cancel a single order by its ID. Returns True if successful."""
+        try:
+            self.trading_client.cancel_order_by_id(order_id)
+            self.logger.info(f"Cancelled order {order_id}")
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to cancel order {order_id}: {e}")
+            return False
+
+    def cancel_orders_for_symbol(self, symbol: str) -> int:
+        """Cancel all open orders for a specific symbol. Returns count cancelled."""
+        open_orders = self.get_open_orders_for_symbol(symbol)
+        cancelled = 0
+        for o in open_orders:
+            if self.cancel_order_by_id(o['id']):
+                cancelled += 1
+        if cancelled:
+            self.logger.info(f"Cancelled {cancelled} orders for {symbol}")
+        return cancelled
+
     def cancel_all_orders(self) -> int:
         """Cancel all open orders. Returns count of cancelled orders."""
         cancelled = self.trading_client.cancel_orders()
