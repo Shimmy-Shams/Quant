@@ -479,7 +479,7 @@ class DashboardGenerator:
                 <select id="watchlist-select" onchange="selectWatchSymbol(this.value || null)"></select>
             </div>
             <div id="watchlist-chart" style="display:none;"></div>
-            <div id="watchlist-info"></div>
+            <div id="watchlist-info" class="watchlist-info-scroll"></div>
         </div>
 
         <!-- Equity Curve (Broker-style) -->
@@ -840,11 +840,11 @@ class DashboardGenerator:
                     $${{fmt(curPrice)}}
                     ${{ahBadge}}
                 </td>
+                <td class="${{cls(pnl)}}">$${{fmt(pnl)}}</td>
+                <td class="${{cls(pnlPct)}}">${{fmtP(pnlPct)}}</td>
                 <td class="${{dayChangePct != null ? cls(dayChangePct) : ''}}">${{dayChangePct != null ? fmtP(dayChangePct) : '—'}}</td>
                 <td>$${{fmt(mktVal)}}</td>
                 <td>${{fmt(pctOfPortfolio, 1)}}%</td>
-                <td class="${{cls(pnl)}}">$${{fmt(pnl)}}</td>
-                <td class="${{cls(pnlPct)}}">${{fmtP(pnlPct)}}</td>
             </tr>`;
         }}
 
@@ -852,17 +852,18 @@ class DashboardGenerator:
             <table>
                 <thead><tr>
                     <th>Symbol</th><th>Side</th><th>Qty</th>
-                    <th>Entry</th><th>Current</th><th>Day Chg</th>
+                    <th>Entry</th><th>Current</th>
+                    <th>P&amp;L</th><th>P&amp;L %</th><th>Day Chg</th>
                     <th>Mkt Value</th><th>% Port</th>
-                    <th>P&amp;L</th><th>P&amp;L %</th>
                 </tr></thead>
                 <tbody>${{rows}}</tbody>
                 <tfoot><tr>
-                    <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
-                    <td style="font-weight:600;">$${{fmt(totalMktVal)}}</td>
-                    <td style="font-weight:600;">${{fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}}%</td>
+                    <td colspan="5" style="text-align:right;font-weight:600;">Totals</td>
                     <td class="${{cls(totalPnl)}}" style="font-weight:600;">$${{fmt(totalPnl)}}</td>
                     <td></td>
+                    <td></td>
+                    <td style="font-weight:600;">$${{fmt(totalMktVal)}}</td>
+                    <td style="font-weight:600;">${{fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}}%</td>
                 </tr></tfoot>
             </table>`;
     }}
@@ -930,7 +931,7 @@ class DashboardGenerator:
                 chartEl.innerHTML = `
                     <div class="tradingview-widget">
                         <iframe src="https://s.tradingview.com/widgetembed/?symbol=${{tvSymbol}}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
-                            style="width:100%;height:450px;border:none;" allowtransparency="true"></iframe>
+                            style="width:100%;height:550px;border:none;" allowtransparency="true"></iframe>
                     </div>`;
                 renderedChartSymbol = activeWatchSymbol;
             }}
@@ -1485,6 +1486,8 @@ body {
 
 /* Tables */
 .table-wrap { overflow-x: auto; }
+#trades-table { max-height: 420px; overflow-y: auto; }
+.watchlist-info-scroll { max-height: 340px; overflow-y: auto; }
 table { width: 100%; border-collapse: collapse; }
 th {
     text-align: left;
@@ -1672,6 +1675,8 @@ tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px
     .metrics-grid { grid-template-columns: repeat(2, 1fr); }
     .metric-value { font-size: 1.3em; }
     .watchlist-grid { grid-template-columns: 1fr; }
+    .tradingview-widget iframe { min-height: 420px !important; }
+    .watchlist-info-scroll { max-height: 280px; }
 }
 """
 
