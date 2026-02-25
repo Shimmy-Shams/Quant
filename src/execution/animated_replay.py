@@ -161,6 +161,7 @@ class AnimatedReplay:
             initial_capital=self.initial_capital,
             commission_pct=self.bt_config.commission_pct,
             slippage_pct=getattr(self.bt_config, 'slippage_pct', 0.0005),
+            commission_model=getattr(self.bt_config, 'commission_model', 'flat'),
         )
 
         # ── Date range ──

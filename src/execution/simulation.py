@@ -113,6 +113,7 @@ class SimulationEngine:
         initial_capital: float = 100000.0,
         commission_pct: float = 0.001,
         slippage_pct: float = 0.0005,
+        commission_model: str = 'flat',
     ):
         """
         Args:
@@ -120,11 +121,17 @@ class SimulationEngine:
             initial_capital: Starting capital
             commission_pct: Commission per trade (0 for Alpaca, use for backtest parity)
             slippage_pct: Estimated slippage
+            commission_model: 'flat', 'ib_tiered', 'ib_fixed', or 'zero'
         """
         self.executor = executor
         self.initial_capital = initial_capital
         self.commission_pct = commission_pct
         self.slippage_pct = slippage_pct
+        self.commission_model = commission_model
+
+        # IB tiered monthly volume tracking
+        self._current_month: int = -1
+        self._monthly_share_volume: float = 0.0
 
         # State
         self.cash = initial_capital
@@ -134,6 +141,61 @@ class SimulationEngine:
         self.all_decisions: List[TradeDecision] = []
         self.all_results: List[TradeResult] = []
 
+    def _calculate_commission(self, shares: float, price: float, trade_date=None) -> float:
+        """
+        Calculate commission for a single trade leg (entry or exit).
+
+        Models:
+        - 'flat': commission_pct * trade_value  (legacy)
+        - 'ib_tiered': IB tiered per-share pricing, min $0.35, max 1% of value
+        - 'ib_fixed': IB fixed $0.005/share, min $1.00, max 1% of value
+        - 'zero': $0 (commission-free, e.g., Alpaca)
+        """
+        trade_value = shares * price
+        model = self.commission_model
+
+        if model == 'zero':
+            return 0.0
+
+        elif model == 'flat':
+            return trade_value * self.commission_pct
+
+        elif model == 'ib_fixed':
+            comm = shares * 0.005
+            comm = max(comm, 1.00)
+            comm = min(comm, trade_value * 0.01)
+            return comm
+
+        elif model == 'ib_tiered':
+            # Track cumulative monthly volume for tier selection
+            if trade_date is not None:
+                month = trade_date.month if hasattr(trade_date, 'month') else -1
+                if month != self._current_month:
+                    self._current_month = month
+                    self._monthly_share_volume = 0.0
+            self._monthly_share_volume += shares
+
+            vol = self._monthly_share_volume
+            if vol <= 300_000:
+                rate = 0.0035
+            elif vol <= 3_000_000:
+                rate = 0.0020
+            elif vol <= 20_000_000:
+                rate = 0.0015
+            elif vol <= 100_000_000:
+                rate = 0.0010
+            else:
+                rate = 0.0005
+
+            comm = shares * rate
+            comm = max(comm, 0.35)
+            comm = min(comm, trade_value * 0.01)
+            return comm
+
+        else:
+            # Fallback to flat
+            return trade_value * self.commission_pct
+
     def reset(self):
         """Reset simulation state"""
         self.cash = self.initial_capital
@@ -142,6 +204,8 @@ class SimulationEngine:
         self.daily_snapshots = []
         self.all_decisions = []
         self.all_results = []
+        self._current_month = -1
+        self._monthly_share_volume = 0.0
 
     @property
     def equity(self) -> float:
@@ -460,7 +524,7 @@ class SimulationEngine:
 
         # Commission
         trade_value = entry_price * decision.target_qty
-        commission = trade_value * self.commission_pct
+        commission = self._calculate_commission(decision.target_qty, entry_price, date)
 
         # Update cash
         if side == 'long':
@@ -501,7 +565,7 @@ class SimulationEngine:
 
         # Calculate P&L
         trade_value = exit_price * abs(pos.qty)
-        commission = trade_value * self.commission_pct
+        commission = self._calculate_commission(abs(pos.qty), exit_price, date)
 
         if pos.side == 'long':
             pnl = (exit_price - pos.entry_price) * pos.qty - commission
