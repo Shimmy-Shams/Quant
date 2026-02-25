@@ -111,6 +111,11 @@ backtest:
   commission_pct: 0.001     # 0.1% commission per trade
   slippage_pct: 0.0005      # 0.05% slippage
 
+  # Execution Price Model: 'close' (default) or 'vwap'
+  # 'vwap' uses volume-weighted average price for entries/exits (more realistic)
+  # Requires VWAP data in the price pipeline (Alpaca bars include it)
+  execution_price: "vwap"
+
   # Position Sizing
   # Options: equal_weight, signal_proportional, volatility_scaled, kelly
   position_size_method: "volatility_scaled"

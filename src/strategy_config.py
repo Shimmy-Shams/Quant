@@ -232,6 +232,9 @@ class ConfigLoader:
             sentiment_negative_threshold=self.get('backtest.sentiment_penalty.negative_threshold', -0.3),
             sentiment_proxy_lookback=self.get('backtest.sentiment_penalty.proxy_lookback_days', 5),
             sentiment_proxy_drop_threshold=self.get('backtest.sentiment_penalty.proxy_drop_threshold', -0.08),
+
+            # Execution price model
+            execution_price=self.get('backtest.execution_price', 'close'),
         )
 
     def to_optimization_config(self):

@@ -76,6 +76,9 @@ class BacktestConfig:
     time_decay_days: int = 10             # Check after N days
     time_decay_threshold: float = 0.01    # Exit if |pnl| < this (1%)
 
+    # Execution price model: 'close' (default) or 'vwap'
+    execution_price: str = 'close'
+
     # Regime filter
     use_regime_filter: bool = True
     min_regime_multiplier: float = 0.5  # Don't trade if regime < this
@@ -296,7 +299,8 @@ class BacktestEngine:
         signal_data: pd.DataFrame,
         volume_data: Optional[pd.DataFrame] = None,
         regime_data: Optional[pd.DataFrame] = None,
-        exit_signal_data: Optional[pd.DataFrame] = None
+        exit_signal_data: Optional[pd.DataFrame] = None,
+        vwap_data: Optional[pd.DataFrame] = None,
     ) -> BacktestResults:
         """
         Run backtest on price/signal data.
@@ -311,6 +315,7 @@ class BacktestEngine:
             regime_data: Optional regime multipliers (0 to 1)
             exit_signal_data: Optional separate signal for exit decisions
                               (e.g., raw z-score in gated mode)
+            vwap_data: Optional VWAP data for VWAP execution model
 
         Returns:
             BacktestResults object
@@ -336,6 +341,20 @@ class BacktestEngine:
         # --- Convert to NumPy arrays (THE key optimization) ---
         price_arr = price_data.values.astype(np.float64)   # (n_days, n_syms)
         signal_arr = signal_data.values.astype(np.float64)  # (n_days, n_syms)
+
+        # VWAP execution price array (if configured)
+        if cfg.execution_price == 'vwap' and vwap_data is not None:
+            vwap_cols = [s for s in sym_list if s in vwap_data.columns]
+            if vwap_cols:
+                vwap_df = vwap_data.reindex(index=dates, columns=sym_list)
+                exec_price_arr = vwap_df.values.astype(np.float64)
+                # Fill NaN VWAP with close price as fallback
+                nan_mask = np.isnan(exec_price_arr)
+                exec_price_arr[nan_mask] = price_arr[nan_mask]
+            else:
+                exec_price_arr = price_arr
+        else:
+            exec_price_arr = price_arr  # Default: use close prices
 
         # Exit signal array (z-score for gated mode exits)
         if exit_signal_data is not None:
@@ -483,7 +502,8 @@ class BacktestEngine:
 
         # --- Main loop (minimal Python, NumPy arrays only) ---
         for i in range(1, n_days):
-            prices_today = price_arr[i]         # (n_syms,) - fast row slice
+            prices_today = exec_price_arr[i]    # (n_syms,) - execution prices (close or vwap)
+            close_today = price_arr[i]           # (n_syms,) - close prices for valuation
             signals_today = signal_arr[i]       # (n_syms,)
             current_cash = cash_arr[i - 1]
             prev_positions = positions_arr[i - 1].copy()  # (n_syms,)
@@ -626,12 +646,12 @@ class BacktestEngine:
 
             # --- ENTRY LOOP ---
             # Compute equity for position sizing (prevents leverage spiral)
-            position_values = np.nansum(prev_positions * prices_today)
+            position_values = np.nansum(prev_positions * close_today)
             current_equity = current_cash + position_values
             portfolio_value = max(current_equity, 0.0)
 
-            # Total current exposure
-            total_exposure = np.nansum(np.abs(prev_positions) * prices_today)
+            # Total current exposure (valued at close for consistency)
+            total_exposure = np.nansum(np.abs(prev_positions) * close_today)
             max_exposure = portfolio_value * cfg.max_total_exposure
 
             for sym_idx in range(n_syms):
@@ -718,14 +738,14 @@ class BacktestEngine:
             # --- Store day results ---
             positions_arr[i] = prev_positions
             cash_arr[i] = current_cash
-            pos_vals = np.nansum(prev_positions * prices_today)
+            pos_vals = np.nansum(prev_positions * close_today)  # Mark-to-market at close
             equity_arr[i] = current_cash + pos_vals
 
             # Exposure tracking
             n_open = int(np.count_nonzero(prev_positions))
             daily_n_positions[i] = n_open
             if equity_arr[i] > 0:
-                daily_exposure[i] = np.nansum(np.abs(prev_positions) * prices_today) / equity_arr[i]
+                daily_exposure[i] = np.nansum(np.abs(prev_positions) * close_today) / equity_arr[i]
 
         # --- Build results ---
         equity_series = pd.Series(equity_arr, index=dates)

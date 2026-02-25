@@ -106,6 +106,7 @@ class AnimatedReplay:
         start_date: str = '2024-02-01',
         end_date: str = '2026-02-01',
         speed_multiplier: float = 1.0,
+        fast_mode: bool = False,
     ):
         """
         Run the animated replay.
@@ -114,6 +115,8 @@ class AnimatedReplay:
             start_date: Replay start date (YYYY-MM-DD)
             end_date: Replay end date (YYYY-MM-DD)
             speed_multiplier: 1.0 = default (~2 min), <1 = faster, >1 = slower
+            fast_mode: If True, skip sleeps and batch UI updates every 10 days
+                       for ~10x faster execution (~30-60s vs ~10 min).
         """
         # ── Setup simulation engine ──
         from connection.alpaca_connection import AlpacaConfig, AlpacaConnection, TradingMode
@@ -156,11 +159,20 @@ class AnimatedReplay:
         display(controls_box)
 
         # ── Timing: adaptive frame rate ──
-        quiet_batch = 5                # batch N quiet days per frame
-        quiet_delay = 0.10 * speed_multiplier
-        signal_delay = 0.20 * speed_multiplier
-        trade_delay = 0.70 * speed_multiplier
-        stop_event_delay = 0.80 * speed_multiplier
+        if fast_mode:
+            quiet_batch = 20
+            quiet_delay = 0.0
+            signal_delay = 0.0
+            trade_delay = 0.0
+            stop_event_delay = 0.0
+            ui_update_interval = 10   # Update chart every N days
+        else:
+            quiet_batch = 5                # batch N quiet days per frame
+            quiet_delay = 0.10 * speed_multiplier
+            signal_delay = 0.20 * speed_multiplier
+            trade_delay = 0.70 * speed_multiplier
+            stop_event_delay = 0.80 * speed_multiplier
+            ui_update_interval = 1
 
         # Pre-compute which days have entries above threshold
         entry_threshold = self.bt_config.entry_threshold
@@ -340,7 +352,21 @@ class AnimatedReplay:
             prev_equity = current_equity
 
             # ── Determine frame speed and whether to update UI ──
-            if has_trades:
+            should_update_ui = (
+                not fast_mode
+                or (i % ui_update_interval == 0)
+                or i == total_days - 1
+            )
+
+            if fast_mode:
+                # Fast mode: batch UI updates, no sleeps
+                if should_update_ui:
+                    self._update_chart(fig, date)
+                    if has_trades:
+                        self._update_log(log_output, max_events=30)
+                    self._update_stats(stats_html, sim, date, i, total_days, daily_pnl)
+                    progress_bar.value = i + 1
+            elif has_trades:
                 # Trade day: always update UI with full detail
                 self._update_chart(fig, date)
                 self._update_log(log_output, max_events=30)
@@ -431,7 +457,7 @@ class AnimatedReplay:
         ), row=2, col=1)
 
         fig.update_layout(
-            height=500,
+            height=700,
             template='plotly_dark',
             paper_bgcolor='#0d1117',
             plot_bgcolor='#161b22',

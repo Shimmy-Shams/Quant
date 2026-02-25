@@ -1036,6 +1036,357 @@ class PerformanceAnalytics:
         return regime_results
 
     # ==================================================================
+    # 3B.6 — Sector / Index Membership Analysis
+    # ==================================================================
+
+    def sector_analysis(
+        self,
+        save: bool = True,
+        show: bool = True,
+        print_report: bool = True,
+    ) -> Dict:
+        """
+        Analyse P&L, win rate, and trade count by index membership.
+
+        Maps every traded symbol to its index constituency (S&P 500,
+        NASDAQ-100, Dow 30, Russell 2000) and produces a four-panel chart
+        plus a text summary.
+
+        Returns
+        -------
+        dict  — keyed by index name with aggregated P&L, trade count, win rate.
+        """
+        from data.universe_builder import (
+            SP500_CORE, NASDAQ_100_CORE, DOW_30, RUSSELL_2000_CORE,
+        )
+
+        index_map = {
+            'S&P 500':    set(SP500_CORE),
+            'NASDAQ-100': set(NASDAQ_100_CORE),
+            'Dow 30':     set(DOW_30),
+            'Russell 2000': set(RUSSELL_2000_CORE),
+        }
+
+        trades_df = self.trades_df
+
+        # Build per-symbol stats
+        sym_stats = (
+            trades_df
+            .groupby('symbol')
+            .agg(
+                pnl=('pnl', 'sum'),
+                trades=('pnl', 'count'),
+                wins=('pnl', lambda x: (x > 0).sum()),
+                avg_pnl_pct=('pnl_pct', 'mean'),
+            )
+        )
+        sym_stats['win_rate'] = sym_stats['wins'] / sym_stats['trades'] * 100
+
+        # Tag each symbol with its index membership(s)
+        rows = []
+        for idx_name, members in index_map.items():
+            mask = sym_stats.index.isin(members)
+            subset = sym_stats.loc[mask]
+            rows.append({
+                'index': idx_name,
+                'symbols': int(mask.sum()),
+                'total_pnl': subset['pnl'].sum(),
+                'trades': int(subset['trades'].sum()),
+                'win_rate': float(
+                    subset['wins'].sum() / subset['trades'].sum() * 100
+                ) if subset['trades'].sum() > 0 else 0.0,
+                'avg_pnl_pct': float(subset['avg_pnl_pct'].mean()) if len(subset) > 0 else 0.0,
+            })
+
+        # Symbols not in any curated list
+        all_curated = set()
+        for m in index_map.values():
+            all_curated |= m
+        uncurated_mask = ~sym_stats.index.isin(all_curated)
+        uncurated = sym_stats.loc[uncurated_mask]
+        if len(uncurated) > 0:
+            rows.append({
+                'index': 'Other',
+                'symbols': int(uncurated_mask.sum()),
+                'total_pnl': uncurated['pnl'].sum(),
+                'trades': int(uncurated['trades'].sum()),
+                'win_rate': float(
+                    uncurated['wins'].sum() / uncurated['trades'].sum() * 100
+                ) if uncurated['trades'].sum() > 0 else 0.0,
+                'avg_pnl_pct': float(uncurated['avg_pnl_pct'].mean()) if len(uncurated) > 0 else 0.0,
+            })
+
+        sector_df = pd.DataFrame(rows)
+
+        # --- Print Report ---
+        if print_report:
+            print("=" * 100)
+            print("3B.6 — SECTOR / INDEX MEMBERSHIP ANALYSIS")
+            print("=" * 100)
+            print(
+                f"\n  {'Index':<15s} {'Symbols':>8s} {'Trades':>8s} "
+                f"{'Win Rate':>10s} {'Avg P&L%':>10s} {'Total P&L':>14s}"
+            )
+            print("  " + "-" * 65)
+            for _, r in sector_df.iterrows():
+                print(
+                    f"  {r['index']:<15s} {r['symbols']:>8d} {r['trades']:>8d} "
+                    f"{r['win_rate']:>9.1f}% {r['avg_pnl_pct']:>+9.2f}% "
+                    f"${r['total_pnl']:>12,.0f}"
+                )
+
+            # Top 5 symbols by P&L
+            top5 = sym_stats.nlargest(5, 'pnl')
+            bot5 = sym_stats.nsmallest(5, 'pnl')
+            print(f"\n  Top 5 symbols by P&L:")
+            for sym, row in top5.iterrows():
+                print(f"    {sym:<6s}  ${row['pnl']:>10,.0f}  ({row['trades']:.0f} trades, {row['win_rate']:.0f}% WR)")
+            print(f"\n  Bottom 5 symbols by P&L:")
+            for sym, row in bot5.iterrows():
+                print(f"    {sym:<6s}  ${row['pnl']:>10,.0f}  ({row['trades']:.0f} trades, {row['win_rate']:.0f}% WR)")
+
+        # --- Visualization ---
+        fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+        fig.suptitle('Index Membership Analysis', fontsize=14, fontweight='bold')
+
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+        idx_names = sector_df['index'].tolist()
+
+        # 1. Trade distribution pie
+        axes[0, 0].pie(
+            sector_df['trades'], labels=idx_names, autopct='%1.1f%%',
+            colors=colors[:len(idx_names)], startangle=90,
+        )
+        axes[0, 0].set_title('Trade Distribution by Index')
+
+        # 2. Total P&L bar
+        bar_colors = ['green' if v > 0 else 'red' for v in sector_df['total_pnl']]
+        axes[0, 1].barh(idx_names, sector_df['total_pnl'], color=bar_colors, alpha=0.7)
+        axes[0, 1].set_xlabel('Total P&L ($)')
+        axes[0, 1].set_title('P&L by Index')
+        axes[0, 1].axvline(x=0, color='black', linewidth=0.5)
+        axes[0, 1].grid(alpha=0.3)
+
+        # 3. Win Rate bar
+        axes[1, 0].barh(idx_names, sector_df['win_rate'], color='steelblue', alpha=0.7)
+        axes[1, 0].set_xlabel('Win Rate (%)')
+        axes[1, 0].set_title('Win Rate by Index')
+        axes[1, 0].axvline(x=50, color='red', linewidth=0.5, linestyle='--', label='50%')
+        axes[1, 0].grid(alpha=0.3)
+        axes[1, 0].legend()
+
+        # 4. Avg P&L% per trade bar
+        avg_colors = ['green' if v > 0 else 'red' for v in sector_df['avg_pnl_pct']]
+        axes[1, 1].barh(idx_names, sector_df['avg_pnl_pct'], color=avg_colors, alpha=0.7)
+        axes[1, 1].set_xlabel('Avg P&L per Trade (%)')
+        axes[1, 1].set_title('Avg Trade Return by Index')
+        axes[1, 1].axvline(x=0, color='black', linewidth=0.5)
+        axes[1, 1].grid(alpha=0.3)
+
+        plt.tight_layout()
+        if save and self.output_dir:
+            path = self.output_dir / '3B6_sector_analysis.png'
+            plt.savefig(str(path), dpi=150, bbox_inches='tight')
+            print(f"\nSaved: {path}")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        return {r['index']: r.to_dict() for _, r in sector_df.iterrows()}
+
+    # ==================================================================
+    # 3B.7 — Slippage Sensitivity Visualization
+    # ==================================================================
+
+    def slippage_sensitivity_chart(
+        self,
+        save: bool = True,
+        show: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Visualize how Sharpe ratio and annual return degrade across
+        slippage levels (0.01% to 1.0%).
+
+        Returns
+        -------
+        pd.DataFrame with columns: slippage_pct, annual_return, sharpe, net_pnl
+        """
+        config = self.config
+        trades_df = self.trades_df
+        equity = self.equity
+        years = len(equity) / 252
+
+        # Gross P&L
+        total_comm = self.results.total_commission
+        total_gross_pnl = trades_df['pnl'].sum() + total_comm
+
+        slippages = [0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01]
+        rows = []
+        for slip in slippages:
+            total_cost_rate = config.commission_pct + slip
+            adj_comm = 2 * total_cost_rate * trades_df['entry_value'].sum()
+            adj_net_pnl = total_gross_pnl - adj_comm
+            adj_total_return = adj_net_pnl / config.initial_capital
+            adj_annual_return = (
+                (1 + adj_total_return) ** (1 / years) - 1
+                if adj_total_return > -1
+                else -1
+            )
+            # Approximate Sharpe degradation: scale by net/gross ratio
+            pnl_ratio = adj_net_pnl / total_gross_pnl if total_gross_pnl > 0 else 0
+            adj_sharpe = self.results.sharpe_ratio * max(pnl_ratio, 0)
+            rows.append({
+                'slippage_bps': slip * 10000,
+                'slippage_pct': slip * 100,
+                'annual_return': adj_annual_return * 100,
+                'sharpe': adj_sharpe,
+                'net_pnl': adj_net_pnl,
+            })
+
+        df = pd.DataFrame(rows)
+
+        # Mark current slippage
+        current_bps = config.slippage_pct * 10000
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        fig.suptitle('Slippage Sensitivity Analysis', fontsize=14, fontweight='bold')
+
+        # Sharpe
+        ax1.plot(df['slippage_bps'], df['sharpe'], 'o-', color='steelblue', linewidth=2)
+        ax1.axvline(x=current_bps, color='red', linestyle='--', alpha=0.7,
+                    label=f'Current ({current_bps:.0f} bps)')
+        ax1.axhline(y=0, color='grey', linewidth=0.5)
+        ax1.set_xlabel('Slippage (bps)')
+        ax1.set_ylabel('Sharpe Ratio')
+        ax1.set_title('Sharpe Ratio vs. Slippage')
+        ax1.legend()
+        ax1.grid(alpha=0.3)
+
+        # Annual Return
+        ax2.plot(df['slippage_bps'], df['annual_return'], 'o-', color='green', linewidth=2)
+        ax2.axvline(x=current_bps, color='red', linestyle='--', alpha=0.7,
+                    label=f'Current ({current_bps:.0f} bps)')
+        ax2.axhline(y=0, color='grey', linewidth=0.5)
+        ax2.set_xlabel('Slippage (bps)')
+        ax2.set_ylabel('Annual Return (%)')
+        ax2.set_title('Annual Return vs. Slippage')
+        ax2.legend()
+        ax2.grid(alpha=0.3)
+
+        plt.tight_layout()
+        if save and self.output_dir:
+            path = self.output_dir / '3B7_slippage_sensitivity.png'
+            plt.savefig(str(path), dpi=150, bbox_inches='tight')
+            print(f"\nSaved: {path}")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        return df
+
+    # ==================================================================
+    # 3B.8 — Trade Validation (Impossible Trade Detector)
+    # ==================================================================
+
+    def trade_validation(
+        self,
+        max_daily_pnl_pct: float = 50.0,
+        min_holding_for_outlier: int = 3,
+        save: bool = True,
+        show: bool = True,
+        print_report: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Detect potentially impossible or suspicious trades:
+        - P&L > max_daily_pnl_pct% in < min_holding_for_outlier days
+        - Zero-share trades
+        - Entry == exit price
+
+        Returns
+        -------
+        pd.DataFrame of flagged trades with reason column.
+        """
+        trades_df = self.trades_df
+        flags = []
+
+        for _, t in trades_df.iterrows():
+            reasons = []
+            # Extreme P&L in short holding period
+            if abs(t['pnl_pct']) > max_daily_pnl_pct and t['holding_days'] < min_holding_for_outlier:
+                reasons.append(f"|P&L|={t['pnl_pct']:.1f}% in {t['holding_days']}d")
+            # Zero shares
+            if t['shares'] == 0:
+                reasons.append("zero_shares")
+            # Entry == Exit (no actual price movement captured)
+            if t['entry_price'] == t['exit_price'] and t['pnl'] != 0:
+                reasons.append("entry==exit but pnl!=0")
+
+            if reasons:
+                flags.append({**t.to_dict(), 'flag': '; '.join(reasons)})
+
+        flagged = pd.DataFrame(flags)
+
+        if print_report:
+            print("=" * 100)
+            print("3B.8 — TRADE VALIDATION (Impossible Trade Detector)")
+            print("=" * 100)
+            print(f"\n  Total trades scanned: {len(trades_df):,}")
+            print(f"  Flagged trades:       {len(flagged):,}")
+            if len(flagged) > 0:
+                print(f"\n  Flags breakdown:")
+                for _, f in flagged.head(20).iterrows():
+                    print(f"    {f['symbol']:<6s} {str(f['entry_date'])[:10]}→{str(f['exit_date'])[:10]} "
+                          f" P&L={f['pnl_pct']:+.1f}%  {f['flag']}")
+
+        # P&L distribution with outlier markers
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        fig.suptitle('Trade Validation Analysis', fontsize=14, fontweight='bold')
+
+        # P&L histogram
+        pnl_vals = trades_df['pnl_pct'].clip(-100, 100)
+        ax1.hist(pnl_vals, bins=80, alpha=0.7, color='steelblue', edgecolor='white')
+        if len(flagged) > 0:
+            ax1.axvline(x=max_daily_pnl_pct, color='red', linestyle='--', alpha=0.7, label=f'Flag threshold ({max_daily_pnl_pct}%)')
+            ax1.axvline(x=-max_daily_pnl_pct, color='red', linestyle='--', alpha=0.7)
+        ax1.set_xlabel('P&L per Trade (%)')
+        ax1.set_ylabel('Frequency')
+        ax1.set_title('Trade P&L Distribution')
+        ax1.legend()
+        ax1.grid(alpha=0.3)
+
+        # Holding days vs absolute P&L scatter
+        ax2.scatter(
+            trades_df['holding_days'],
+            trades_df['pnl_pct'].abs(),
+            alpha=0.15, s=8, color='steelblue',
+        )
+        if len(flagged) > 0:
+            ax2.scatter(
+                flagged['holding_days'],
+                flagged['pnl_pct'].abs(),
+                alpha=0.8, s=30, color='red', marker='x', label='Flagged',
+            )
+        ax2.set_xlabel('Holding Days')
+        ax2.set_ylabel('|P&L| (%)')
+        ax2.set_title('Holding Period vs |P&L|')
+        ax2.legend()
+        ax2.grid(alpha=0.3)
+
+        plt.tight_layout()
+        if save and self.output_dir:
+            path = self.output_dir / '3B8_trade_validation.png'
+            plt.savefig(str(path), dpi=150, bbox_inches='tight')
+            print(f"\nSaved: {path}")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        return flagged
+
+    # ==================================================================
     # Run All
     # ==================================================================
 
@@ -1047,9 +1398,14 @@ class PerformanceAnalytics:
         self.trade_analytics(save=save, show=show)
         turnover = self.turnover_analysis()
         regimes = self.regime_analysis(save=save, show=show)
+        sectors = self.sector_analysis(save=save, show=show)
+        self.slippage_sensitivity_chart(save=save, show=show)
+        validation = self.trade_validation(save=save, show=show)
         return {
             'capital_utilization': cap,
             'risk_metrics': risk,
             'turnover': turnover,
             'regimes': regimes,
+            'sectors': sectors,
+            'validation': validation,
         }

@@ -165,6 +165,61 @@ Instead of blocking trades, this layer **reduces position size** when negative s
 
 The Sharpe reduction (~6%) is expected — the filters remove some profitable pre-earnings trades in exchange for reduced tail risk from earnings surprises. The system trades risk-adjusted safety for raw return.
 
+### 8. VM Workflow — System Behaviour in Production
+
+When deployed on the Oracle Cloud VM as a systemd service, the system follows this end-to-end cycle every trading day:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  quant-trader.service (systemd, auto-restart on failure)           │
+│                                                                     │
+│  06:30 ET  Wake up → load config.yaml → connect Alpaca API         │
+│            └─ Verify credentials + account status                   │
+│                                                                     │
+│  06:35 ET  Universe refresh                                        │
+│            ├─ Fetch latest daily bars for 294 symbols               │
+│            ├─ Re-rank by Hurst exponent (if stale > 7 days)         │
+│            └─ Select top-100 mean-reverting symbols                 │
+│                                                                     │
+│  06:40 ET  Signal pipeline                                         │
+│            ├─ Compute Kalman z-scores per symbol                    │
+│            ├─ Detect RSI divergence (gate signal)                   │
+│            ├─ Estimate OU predicted returns                         │
+│            ├─ Apply dynamic short confidence filter                 │
+│            └─ Produce composite signal vector                       │
+│                                                                     │
+│  15:50 ET  Pre-trade risk checks                                   │
+│            ├─ Tier 2: Earnings blackout scan                        │
+│            ├─ Tier 1: Sentiment penalty evaluation                  │
+│            ├─ Regime filter (vol ratio check)                       │
+│            └─ Exposure / position-size validation                   │
+│                                                                     │
+│  15:55 ET  Execution window                                        │
+│            ├─ Process EXITS first (frees capital)                   │
+│            │   └─ Signal exit, stop-loss, trailing stop,            │
+│            │      time-decay, max-holding, take-profit              │
+│            ├─ Process ENTRIES                                       │
+│            │   └─ Market order → poll fill → GTC stop-loss          │
+│            └─ Log all decisions to data/snapshots/trading_logs/     │
+│                                                                     │
+│  16:05 ET  Post-trade                                               │
+│            ├─ Snapshot equity curve + positions → CSV               │
+│            ├─ Generate dashboard HTML                               │
+│            ├─ Git push to dashboard-live branch                     │
+│            └─ Log cycle summary                                     │
+│                                                                     │
+│  16:10 ET  Sleep until next trading day                             │
+│            └─ Skips weekends + market holidays automatically        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Production Behaviors:**
+- **Fail-open**: If news/earnings data is unavailable, trades proceed (no silent blocks)
+- **Auto-recovery**: systemd restarts on crash; state is persisted to CSV snapshots
+- **Idempotent**: Re-running the same cycle produces the same orders (no double entries)
+- **Observable**: All decisions logged with timestamps + signal values for post-hoc audit
+- **Dashboard updates**: Live dashboard on GitHub Pages refreshes after each cycle
+
 ---
 
 ## System Architecture
@@ -228,10 +283,11 @@ Quant/
 │   │   └── mean_reversion.py    # Signal pipeline (Z-score, Kalman, OU, RSI, BB)
 │   ├── execution/
 │   │   ├── alpaca_executor.py   # Trade decisions → Alpaca orders + risk checks
+│   │   ├── animated_replay.py   # Animated day-by-day replay with fast_mode
 │   │   └── simulation.py        # Shadow/replay simulation engine
 │   ├── backtest/
-│   │   ├── engine.py            # Vectorized backtesting framework
-│   │   ├── analytics.py         # Performance metrics (Sharpe, drawdown, etc.)
+│   │   ├── engine.py            # Vectorized backtesting (close + VWAP execution)
+│   │   ├── analytics.py         # 10 analytics modules (3B.0–3B.9)
 │   │   └── optimizer.py         # Bayesian + grid walk-forward optimization
 │   ├── data/
 │   │   ├── alpaca_data.py       # Alpaca market data adapter with caching
@@ -249,8 +305,9 @@ Quant/
 │   ├── historical/daily/        # Cached daily price data (parquet)
 │   ├── snapshots/               # Shadow state, equity history, hurst rankings, earnings cache
 │   └── logs/                    # Trading logs
-├── docs/                        # Dashboard output + documentation
-│   └── index.html               # Generated live dashboard
+├── docs/
+│   ├── index.html               # Generated live dashboard
+│   └── FEATURE_REGISTRY.md      # Feature cross-reference by execution mode
 └── deploy/
     ├── setup.sh                 # VM deployment script
     └── quant-trader.service     # systemd service definition
@@ -261,11 +318,28 @@ Quant/
 All strategy parameters are centralized in `config.yaml`. Key sections:
 
 - **signals**: Z-score windows, Hurst thresholds, Kalman filter params, OU prediction, composite weights, gated mode settings, dynamic short filter
-- **backtest**: Capital, transaction costs, position sizing method, entry/exit thresholds, risk management (stop loss, take profit, trailing stop, time decay), news event filters (earnings blackout, sentiment penalty)
+- **backtest**: Capital, transaction costs, position sizing method, entry/exit thresholds, risk management (stop loss, take profit, trailing stop, time decay), news event filters (earnings blackout, sentiment penalty), execution price model (`close` or `vwap`)
 - **optimization**: Walk-forward settings, Bayesian/grid search ranges, objective metric
 - **universe**: Statistical test toggles (Hurst, half-life, ADF)
 - **alpaca**: Data feed, universe size, execution mode
 - **news_events** (under backtest): Tier 2 earnings blackout (`enabled`, `blackout_days`) and Tier 1 sentiment penalty (`enabled`, `penalty_floor`, `negative_threshold`, `proxy_lookback_days`, `proxy_drop_threshold`)
+
+### Analytics Modules (3B.0–3B.9)
+
+| Module | Description |
+|---|---|
+| **3B.0** Capital Utilization | Exposure, idle capital, position frequency |
+| **3B.1** Risk Metrics | VaR, CVaR, tail ratio, Omega, Ulcer Index |
+| **3B.2** Rolling Analytics | Edge decay detection via rolling Sharpe/win rate |
+| **3B.3** Trade Analytics | P&L distribution, monthly heatmap, clustering |
+| **3B.4** Turnover & Cost | Break-even cost, slippage sensitivity (text) |
+| **3B.5** Regime Analysis | Per-regime Sharpe, drawdown, trade stats |
+| **3B.6** Sector/Index Analysis | P&L by S&P 500, NASDAQ-100, Dow 30, Russell 2000 |
+| **3B.7** Slippage Sensitivity | Visual Sharpe/return degradation chart (1–100 bps) |
+| **3B.8** Trade Validation | Impossible trade detector (outlier P&L, zero shares) |
+| **3B.9** Data Quality Audit | Price jumps, zero-volume, duplicates, split artifacts |
+
+See [docs/FEATURE_REGISTRY.md](docs/FEATURE_REGISTRY.md) for a full cross-reference of features by execution mode.
 
 ---
 
