@@ -164,11 +164,13 @@ class PerformanceAnalytics:
         config: BacktestConfig,
         signal_df: pd.DataFrame,
         output_dir: Optional[Path] = None,
+        label: str = '',
     ):
         self.results = results
         self.config = config
         self.signal_df = signal_df
         self.output_dir = Path(output_dir) if output_dir else None
+        self.label = label  # e.g. 'BACKTEST' or 'REPLAY'
 
         # Derived series
         self.equity = results.equity_curve
@@ -329,8 +331,9 @@ class PerformanceAnalytics:
 
     def _print_capital_utilization(self, r: CapitalUtilizationReport) -> None:
         pnl_total = self.trades_df['pnl'].sum()
+        hdr = f"CAPITAL UTILIZATION DIAGNOSTIC [{self.label}]" if self.label else "CAPITAL UTILIZATION DIAGNOSTIC"
         print("=" * 80)
-        print("CAPITAL UTILIZATION DIAGNOSTIC")
+        print(hdr)
         print("=" * 80)
 
         print(f"\n--- Market Presence ---")
@@ -447,8 +450,9 @@ class PerformanceAnalytics:
         return report
 
     def _print_risk_metrics(self, r: RiskMetricsReport) -> None:
+        hdr = f"3B.1 — RISK METRICS DASHBOARD [{self.label}]" if self.label else "3B.1 — RISK METRICS DASHBOARD"
         print("=" * 80)
-        print("3B.1 — RISK METRICS DASHBOARD")
+        print(hdr)
         print("=" * 80)
 
         print(f"\n--- Value at Risk (Historical) ---")
@@ -614,8 +618,9 @@ class PerformanceAnalytics:
         win_streaks = [s[1] for s in streaks if s[0] == 1]
         loss_streaks = [s[1] for s in streaks if s[0] == 0]
 
+        hdr = f"3B.3 — TRADE-LEVEL ANALYTICS [{self.label}]" if self.label else "3B.3 — TRADE-LEVEL ANALYTICS"
         print("=" * 80)
-        print("3B.3 — TRADE-LEVEL ANALYTICS")
+        print(hdr)
         print("=" * 80)
         print(f"\n--- Win/Loss Streaks ---")
         print(f"  Max winning streak: {max(win_streaks)} trades")
@@ -812,8 +817,9 @@ class PerformanceAnalytics:
 
     def _print_turnover(self, r: TurnoverReport) -> None:
         config = self.config
+        hdr = f"3B.4 — TURNOVER & COST ANALYSIS [{self.label}]" if self.label else "3B.4 — TURNOVER & COST ANALYSIS"
         print("=" * 80)
-        print("3B.4 — TURNOVER & COST ANALYSIS")
+        print(hdr)
         print("=" * 80)
 
         print(f"\n--- Gross vs Net Returns ---")
@@ -887,8 +893,9 @@ class PerformanceAnalytics:
             self._avg_size_pct = avg_pos_value / avg_equity_at_entry * 100
 
         if print_report:
+            hdr = f"3B.5 — ENHANCED REGIME ANALYSIS [{self.label}]" if self.label else "3B.5 — ENHANCED REGIME ANALYSIS"
             print("=" * 120)
-            print("3B.5 — ENHANCED REGIME ANALYSIS")
+            print(hdr)
             print("=" * 120)
             print(
                 f"\n{'Regime':<25s} {'Period':>22s}  {'Trades':>6s} {'WR':>6s} "
@@ -1117,8 +1124,9 @@ class PerformanceAnalytics:
 
         # --- Print Report ---
         if print_report:
+            hdr = f"3B.6 — SECTOR / INDEX MEMBERSHIP ANALYSIS [{self.label}]" if self.label else "3B.6 — SECTOR / INDEX MEMBERSHIP ANALYSIS"
             print("=" * 100)
-            print("3B.6 — SECTOR / INDEX MEMBERSHIP ANALYSIS")
+            print(hdr)
             print("=" * 100)
             print(
                 f"\n  {'Index':<15s} {'Symbols':>8s} {'Trades':>8s} "
@@ -1144,7 +1152,8 @@ class PerformanceAnalytics:
 
         # --- Visualization ---
         fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-        fig.suptitle('Index Membership Analysis', fontsize=14, fontweight='bold')
+        lbl = f' [{self.label}]' if self.label else ''
+        fig.suptitle(f'Index Membership Analysis{lbl}', fontsize=14, fontweight='bold')
 
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
         idx_names = sector_df['index'].tolist()
@@ -1246,7 +1255,8 @@ class PerformanceAnalytics:
         current_bps = config.slippage_pct * 10000
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle('Slippage Sensitivity Analysis', fontsize=14, fontweight='bold')
+        lbl = f' [{self.label}]' if self.label else ''
+        fig.suptitle(f'Slippage Sensitivity Analysis{lbl}', fontsize=14, fontweight='bold')
 
         # Sharpe
         ax1.plot(df['slippage_bps'], df['sharpe'], 'o-', color='steelblue', linewidth=2)
@@ -1324,8 +1334,9 @@ class PerformanceAnalytics:
         flagged = pd.DataFrame(flags)
 
         if print_report:
+            hdr = f"3B.8 — TRADE VALIDATION [{self.label}]" if self.label else "3B.8 — TRADE VALIDATION (Impossible Trade Detector)"
             print("=" * 100)
-            print("3B.8 — TRADE VALIDATION (Impossible Trade Detector)")
+            print(hdr)
             print("=" * 100)
             print(f"\n  Total trades scanned: {len(trades_df):,}")
             print(f"  Flagged trades:       {len(flagged):,}")
@@ -1337,7 +1348,8 @@ class PerformanceAnalytics:
 
         # P&L distribution with outlier markers
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle('Trade Validation Analysis', fontsize=14, fontweight='bold')
+        lbl = f' [{self.label}]' if self.label else ''
+        fig.suptitle(f'Trade Validation Analysis{lbl}', fontsize=14, fontweight='bold')
 
         # P&L histogram
         pnl_vals = trades_df['pnl_pct'].clip(-100, 100)
