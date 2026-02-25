@@ -475,11 +475,12 @@ class AnimatedReplay:
         ), row=2, col=1)
 
         fig.update_layout(
-            height=700,
+            height=650,
+            autosize=True,
             template='plotly_dark',
             paper_bgcolor='#0d1117',
             plot_bgcolor='#161b22',
-            margin=dict(l=60, r=20, t=40, b=20),
+            margin=dict(l=60, r=30, t=40, b=30),
             legend=dict(orientation='h', x=0, y=1.12),
             barmode='relative',
             showlegend=True,
@@ -527,21 +528,8 @@ class AnimatedReplay:
         </div>
         """)
 
-        # Top: chart + stats side by side
-        chart_panel = widgets.VBox(
-            [fig_widget],
-            layout=widgets.Layout(flex='3'),
-        )
-        stats_panel = widgets.VBox(
-            [stats_html],
-            layout=widgets.Layout(
-                flex='1', min_width='220px',
-            ),
-        )
-        top_row = widgets.HBox(
-            [chart_panel, stats_panel],
-            layout=widgets.Layout(width='100%'),
-        )
+        # Chart at full width for proper rendering in notebook
+        fig_widget.layout.autosize = True
 
         # Log section
         log_label = widgets.HTML(value="""
@@ -554,7 +542,8 @@ class AnimatedReplay:
         controls_box = widgets.VBox([
             header,
             progress_bar,
-            top_row,
+            stats_html,
+            fig_widget,
             log_label,
             log_output,
         ])
@@ -562,7 +551,7 @@ class AnimatedReplay:
         # Track all widgets for cleanup on rerun
         self._widgets = [
             fig_widget, log_output, progress_bar, stats_html,
-            header, chart_panel, stats_panel, top_row, log_label, controls_box,
+            header, log_label, controls_box,
         ]
 
         return fig_widget, log_output, progress_bar, stats_html, controls_box
@@ -574,24 +563,23 @@ class AnimatedReplay:
         """Generate the stats panel HTML."""
         pnl_color = '#3fb950' if daily_pnl >= 0 else '#da3633'
         ret_color = '#3fb950' if total_return >= 0 else '#da3633'
+        date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else date
         return f"""
         <div style="background:#161b22; border:1px solid #30363d; border-radius:8px;
-                    padding:12px; color:#c9d1d9; font-size:0.85em; line-height:1.8;">
-            <div style="font-weight:700; color:#667eea; margin-bottom:8px;">
-                📊 Live Stats</div>
-            <div>📅 <b>{date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else date}</b></div>
-            <div>Day <b>{day_num + 1}</b> / {total_days}</div>
-            <hr style="border-color:#30363d; margin:6px 0;">
-            <div>💰 Equity: <b>${equity:,.0f}</b></div>
-            <div>📈 Return: <span style="color:{ret_color}; font-weight:600;">{total_return:+.2f}%</span></div>
-            <div>📊 Daily P&L: <span style="color:{pnl_color};">${daily_pnl:+,.0f}</span></div>
-            <hr style="border-color:#30363d; margin:6px 0;">
-            <div>📦 Positions: <b>{n_positions}</b></div>
-            <div style="margin-left:12px;">
-                <span style="color:#238636;">▲ {n_longs}L</span> /
-                <span style="color:#da3633;">▼ {n_shorts}S</span>
-            </div>
-            <div>🔄 Total Trades: <b>{n_trades}</b></div>
+                    padding:8px 14px; color:#c9d1d9; font-size:0.85em;
+                    display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center;">
+            <span style="font-weight:700; color:#667eea;">📊 Live Stats</span>
+            <span>📅 <b>{date_str}</b> &nbsp; Day <b>{day_num + 1}</b>/{total_days}</span>
+            <span style="border-left:1px solid #30363d; padding-left:12px;">
+                💰 Equity: <b>${equity:,.0f}</b></span>
+            <span>📈 Return: <span style="color:{ret_color}; font-weight:600;">
+                {total_return:+.2f}%</span></span>
+            <span>📊 P&L: <span style="color:{pnl_color};">${daily_pnl:+,.0f}</span></span>
+            <span style="border-left:1px solid #30363d; padding-left:12px;">
+                📦 <b>{n_positions}</b> pos
+                (<span style="color:#238636;">▲{n_longs}L</span> /
+                 <span style="color:#da3633;">▼{n_shorts}S</span>)</span>
+            <span>🔄 <b>{n_trades}</b> trades</span>
         </div>
         """
 
