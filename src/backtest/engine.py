@@ -413,6 +413,11 @@ class BacktestEngine:
         price_data = price_data[common_symbols]
         signal_data = signal_data[common_symbols]
 
+        # Align signal rows to price dates (avoids misalignment when
+        # signal_data spans more dates than price_data, e.g. optimizer)
+        if len(signal_data) != len(price_data):
+            signal_data = signal_data.reindex(index=price_data.index)
+
         dates = price_data.index
         n_days = len(dates)
         n_syms = len(common_symbols)
@@ -853,42 +858,32 @@ class BacktestEngine:
             total_exposure = np.nansum(np.abs(prev_positions) * close_today)
             max_exposure = portfolio_value * cfg.max_total_exposure
 
-            for sym_idx in range(n_syms):
-                if prev_positions[sym_idx] != 0.0:
-                    continue  # Already have a position
-
-                # Excluded symbols (permanent blacklist)
-                if sym_idx in excluded_sym_idx:
-                    continue
-
-                sig = filt_signals[sym_idx]
-                px = prices_today[sym_idx]
-
-                if np.isnan(sig) or np.isnan(px) or px <= 0:
-                    continue
-
-                # Data quality: minimum price filter
-                if cfg.min_entry_price > 0 and px < cfg.min_entry_price:
-                    continue
-
-                # Data quality: minimum volume filter
-                if cfg.min_entry_volume > 0 and volume_arr is not None:
-                    vol_today = volume_arr[i, sym_idx]
-                    if np.isnan(vol_today) or vol_today < cfg.min_entry_volume:
-                        continue
-
-                if abs(sig) <= cfg.entry_threshold:
-                    continue
-
-                # Tier 2: Earnings blackout — skip entries near earnings dates
-                if cfg.earnings_blackout_enabled and i in earnings_blackout_idx:
-                    if sym_idx in earnings_blackout_idx[i]:
+            # ── Vectorized entry pre-filter (numpy boolean mask) ──
+            _cmask = (prev_positions == 0.0)
+            _cmask &= np.isfinite(filt_signals) & np.isfinite(prices_today) & (prices_today > 0)
+            _cmask &= (np.abs(filt_signals) > cfg.entry_threshold)
+            if cfg.min_entry_price > 0:
+                _cmask &= (prices_today >= cfg.min_entry_price)
+            if cfg.min_entry_volume > 0 and volume_arr is not None:
+                _vtd = volume_arr[i]
+                _cmask &= np.isfinite(_vtd) & (_vtd >= cfg.min_entry_volume)
+            for _ex_idx in excluded_sym_idx:
+                _cmask[_ex_idx] = False
+            # Tier 2: Earnings blackout — filter + preserve diagnostic counts
+            if cfg.earnings_blackout_enabled and i in earnings_blackout_idx:
+                for _bo_idx in earnings_blackout_idx[i]:
+                    if _cmask[_bo_idx]:
+                        _cmask[_bo_idx] = False
                         _diag["tier2_entries_blocked"] += 1
                         if len(_diag["tier2_block_details"]) < 200:
                             _diag["tier2_block_details"].append((
-                                i, sym_list[sym_idx], str(dates[i].date())
+                                i, sym_list[_bo_idx], str(dates[i].date())
                             ))
-                        continue  # Earnings within blackout window
+            _entry_candidates = np.flatnonzero(_cmask)
+
+            for sym_idx in _entry_candidates:
+                sig = filt_signals[sym_idx]
+                px = prices_today[sym_idx]
 
                 # Exposure check
                 if total_exposure >= max_exposure:

@@ -239,7 +239,7 @@ backtest:
 # =============================================================================
 optimization:
   # Toggle: set to false to skip optimization and use current config params
-  enabled: True
+  enabled: true
 
   # Walk-Forward Settings
   train_period_days: 504    # 2 year training window (covers bull+bear cycles)
@@ -248,8 +248,8 @@ optimization:
 
   # Method
   method: "bayesian"            # Options: grid, bayesian
-  n_trials: 50               # Number of trials for Bayesian optimization (TPE converges well at 50)
-  n_jobs: -1                 # Parallel trials (-1 = all CPU cores, 1 = sequential)
+  n_trials: 50               # Number of trials for Bayesian optimization (early stopping at patience=15)
+  n_jobs: 1                  # Sequential (threading adds overhead for CPU-bound backtests due to GIL)
 
   # Objective
   # PHASE A OPTIMIZATION: Changed to sharpe_ratio (rewards risk-adjusted returns)

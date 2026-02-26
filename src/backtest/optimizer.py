@@ -113,6 +113,9 @@ class ParameterOptimizer:
         self.config = config or OptimizationConfig()
         self._base_bt_config = base_backtest_config
         self._exit_signal_data = None  # Separate exit signal for gated mode
+        # ── Performance caches (avoid redundant computation across trials) ──
+        self._cached_signal_data = None   # signal_generator() returns same result every call
+        self._cached_base_dict = None     # asdict(base_config) is constant
 
     def walk_forward_optimization(
         self,
@@ -358,12 +361,29 @@ class ParameterOptimizer:
         print(f"  Bayesian optimization: {n_trials} trials, n_jobs={n_jobs}")
         t0 = time.time()
 
-        # Optimize with parallel trials
+        # Early stopping: halt when no improvement for 15 consecutive trials
+        class _EarlyStop:
+            def __init__(self, patience=15):
+                self._best = -np.inf
+                self._wait = 0
+                self._patience = patience
+            def __call__(self, study, trial):
+                val = trial.value if trial.value is not None else -np.inf
+                if val > self._best:
+                    self._best = val
+                    self._wait = 0
+                else:
+                    self._wait += 1
+                if self._wait >= self._patience:
+                    study.stop()
+
+        # Optimize with early stopping callback
         study.optimize(
             objective,
             n_trials=n_trials,
             n_jobs=n_jobs,
-            show_progress_bar=True
+            show_progress_bar=True,
+            callbacks=[_EarlyStop(patience=15)]
         )
 
         elapsed = time.time() - t0
@@ -384,13 +404,18 @@ class ParameterOptimizer:
         regime_data: Optional[pd.DataFrame]
     ) -> BacktestResults:
         """Run backtest with specific parameters, inheriting sizing/return config from base"""
-        # Generate signals (signal generator should not depend on backtest params)
-        signal_data = signal_generator(params)
+        # Cache signals (signal_generator is param-independent — same result every call)
+        if self._cached_signal_data is None:
+            self._cached_signal_data = signal_generator(params)
+        signal_data = self._cached_signal_data
 
         # Start from base config if provided, override with optimized params
         if self._base_bt_config is not None:
-            from dataclasses import asdict
-            base_dict = asdict(self._base_bt_config)
+            # Cache base dict (asdict is expensive, base config never changes)
+            if self._cached_base_dict is None:
+                from dataclasses import asdict
+                self._cached_base_dict = asdict(self._base_bt_config)
+            base_dict = self._cached_base_dict.copy()
             # Override only the params being optimized
             base_dict['entry_threshold'] = params.get('entry_threshold', base_dict.get('entry_threshold', 2.0))
             base_dict['exit_threshold'] = params.get('exit_threshold', base_dict.get('exit_threshold', 0.5))
