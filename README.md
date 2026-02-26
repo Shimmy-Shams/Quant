@@ -4,7 +4,7 @@ An autonomous, headless trading system that identifies and trades statistically 
 
 ## Overview
 
-This system trades a dynamically selected universe of up to 100 US equities, filtering for stocks that exhibit statistically significant mean-reverting behavior (Hurst exponent < 0.5). It generates composite trading signals from multiple quantitative indicators, applies news event filters (earnings blackout + sentiment penalty), executes near market close (3:55 PM ET) to match daily bar formation, and runs 24/7 as a systemd service on an Oracle Cloud VM.
+This system trades a dynamically selected universe of up to 100 US equities, filtering for stocks that exhibit statistically significant mean-reverting behavior (Hurst exponent < 0.5). It generates composite trading signals from multiple quantitative indicators, applies news event filters (earnings blackout + sentiment penalty), and executes at **9:35 AM ET (T+1 Open)** — using yesterday's close-price signals to trade at today's market open — eliminating look-ahead bias while preserving alpha. Runs 24/7 as a systemd service on an Oracle Cloud VM.
 
 **Live Dashboard**: [shimmy-shams.github.io/Quant](https://shimmy-shams.github.io/Quant/)
 
@@ -101,7 +101,7 @@ Total portfolio exposure is capped at 100% of equity.
 
 | Rule | Condition |
 |------|-----------|
-| **Entry** | \|composite signal\| > 1.43 (optimized threshold) || **Earnings Blackout** | Entry blocked if symbol has earnings within 2 calendar days (Tier 2 filter) |
+| **Entry** | \|composite signal\| > 1.50 (optimized threshold) || **Earnings Blackout** | Entry blocked if symbol has earnings within 2 calendar days (Tier 2 filter) |
 | **Sentiment Penalty** | Position size reduced by up to 50% if recent price drop > 8% in 5 days (Tier 1 filter) || **Signal Exit** | Z-score reverts past ±0.50 (long: z > -0.50, short: z < +0.50) |
 | **Stop Loss** | P&L < -10% (both longs and shorts) |
 | **Take Profit** | P&L > +15% |
@@ -109,12 +109,18 @@ Total portfolio exposure is capped at 100% of equity.
 | **Trailing Stop** | Activates at +2% profit, trails at 5% from peak |
 | **Time Decay** | If P&L is within ±1% after 10 days, exit (setup failed) |
 
-### 5. Execution
+### 5. Execution — T+1 Open Model
 
-Trades execute at **3:55 PM ET** — 5 minutes before market close. This ensures:
-- The daily price bar is fully formed
-- Signals match the backtest engine's daily-close methodology
-- Slippage is minimized in deep closing liquidity
+Trades execute at **9:35 AM ET** — 5 minutes after market open. This implements a **T+1 Open** execution model:
+
+| Step | Timing | What Happens |
+|------|--------|-------------|
+| Signal generation | Day T (overnight) | Composite signals computed from Day T's close prices |
+| Trade execution | Day T+1 open (9:35 AM ET) | Orders filled at market open prices |
+| Post-trade refresh | 10:00 AM ET | Dashboard updated with settled fills |
+| Post-close refresh | 4:05 PM ET | Dashboard updated with final closing data |
+
+**Why T+1 Open?** The previous T+0 model (3:55 PM ET) used the same closing price for both signal generation and trade fills — a circular dependency that inflates backtested returns. By waiting until the next morning, signals are derived from fully settled data and fills occur at independent market prices. Validated via 3-scenario replay analysis (see Validation Tests below).
 
 **Execution order**: Exits are processed first (freeing capital), then entries. Each entry undergoes a pre-trade risk check:
 - Single position ≤ 10% of equity
@@ -173,28 +179,16 @@ When deployed on the Oracle Cloud VM as a systemd service, the system follows th
 ┌─────────────────────────────────────────────────────────────────────┐
 │  quant-trader.service (systemd, auto-restart on failure)           │
 │                                                                     │
-│  06:30 ET  Wake up → load config.yaml → connect Alpaca API         │
-│            └─ Verify credentials + account status                   │
+│  09:30 ET  Market opens → intraday monitor activates               │
+│            └─ Monitors stop-loss triggers on open positions          │
 │                                                                     │
-│  06:35 ET  Universe refresh                                        │
-│            ├─ Fetch latest daily bars for 294 symbols               │
-│            ├─ Re-rank by Hurst exponent (if stale > 7 days)         │
-│            └─ Select top-100 mean-reverting symbols                 │
-│                                                                     │
-│  06:40 ET  Signal pipeline                                         │
-│            ├─ Compute Kalman z-scores per symbol                    │
-│            ├─ Detect RSI divergence (gate signal)                   │
-│            ├─ Estimate OU predicted returns                         │
-│            ├─ Apply dynamic short confidence filter                 │
-│            └─ Produce composite signal vector                       │
-│                                                                     │
-│  15:50 ET  Pre-trade risk checks                                   │
+│  09:35 ET  Execution window (T+1 Open)                             │
+│            ├─ Fetch latest daily bars (yesterday's close settled)    │
+│            ├─ Re-rank universe by Hurst exponent (if stale)         │
+│            ├─ Compute Kalman z-scores, RSI divergence, OU returns   │
+│            ├─ Apply short confidence + acceleration filters          │
 │            ├─ Tier 2: Earnings blackout scan                        │
 │            ├─ Tier 1: Sentiment penalty evaluation                  │
-│            ├─ Regime filter (vol ratio check)                       │
-│            └─ Exposure / position-size validation                   │
-│                                                                     │
-│  15:55 ET  Execution window                                        │
 │            ├─ Process EXITS first (frees capital)                   │
 │            │   └─ Signal exit, stop-loss, trailing stop,            │
 │            │      time-decay, max-holding, take-profit              │
@@ -202,11 +196,21 @@ When deployed on the Oracle Cloud VM as a systemd service, the system follows th
 │            │   └─ Market order → poll fill → GTC stop-loss          │
 │            └─ Log all decisions to data/snapshots/trading_logs/     │
 │                                                                     │
-│  16:05 ET  Post-trade                                               │
-│            ├─ Snapshot equity curve + positions → CSV               │
+│  09:36 ET  Immediate dashboard generation                          │
+│            └─ Captures trade decisions + account state              │
+│                                                                     │
+│  10:00 ET  Post-trade dashboard refresh                             │
+│            ├─ Fills have settled, accurate P&L snapshot             │
 │            ├─ Generate dashboard HTML                               │
-│            ├─ Git push to dashboard-live branch                     │
-│            └─ Log cycle summary                                     │
+│            └─ Git push to dashboard-live branch                     │
+│                                                                     │
+│  09:45–    Intraday monitor (continuous)                            │
+│  15:50 ET  └─ Polls positions every 5 min for stop-loss triggers    │
+│                                                                     │
+│  16:05 ET  Post-close dashboard refresh                             │
+│            ├─ Final closing data captured                           │
+│            ├─ Regenerate dashboard with EOD prices                  │
+│            └─ Git push to dashboard-live branch                     │
 │                                                                     │
 │  16:10 ET  Sleep until next trading day                             │
 │            └─ Skips weekends + market holidays automatically        │
@@ -218,7 +222,7 @@ When deployed on the Oracle Cloud VM as a systemd service, the system follows th
 - **Auto-recovery**: systemd restarts on crash; state is persisted to CSV snapshots
 - **Idempotent**: Re-running the same cycle produces the same orders (no double entries)
 - **Observable**: All decisions logged with timestamps + signal values for post-hoc audit
-- **Dashboard updates**: Live dashboard on GitHub Pages refreshes after each cycle
+- **Dashboard updates**: Three daily refreshes — immediate post-trade (9:36 AM), post-settlement (10:00 AM), and post-close (4:05 PM ET)
 
 ---
 
@@ -279,6 +283,7 @@ Quant/
 ├── src/
 │   ├── main_trader.py           # Headless 24/7 trader (entry point)
 │   ├── strategy_config.py       # YAML config loader + validation
+│   ├── validation_tests.ipynb   # T+1, out-of-universe, slippage stress tests
 │   ├── strategies/
 │   │   └── mean_reversion.py    # Signal pipeline (Z-score, Kalman, OU, RSI, BB)
 │   ├── execution/
@@ -391,7 +396,7 @@ The system tracks rolling performance metrics across multiple windows to detect 
 | **Break-Even One-Way Cost** | 0.54% |
 | **Safety Margin** | 2.7× current cost |
 
-**How this improves the model:** The break-even analysis shows the strategy can absorb commission rates up to 0.54% per side before becoming unprofitable — the current rate of 0.20% leaves a 2.7× safety margin. The slippage sensitivity table reveals that returns degrade gracefully up to 20 bps of slippage but collapse at 50+ bps, establishing a hard operational constraint: the system must execute in liquid markets (which the closing auction at 3:55 PM ET ensures). This analysis directly informed the choice of IB tiered commission model over flat-rate, saving approximately $50K over the replay period.
+**How this improves the model:** The break-even analysis shows the strategy can absorb commission rates up to 0.54% per side before becoming unprofitable — the current rate of 0.20% leaves a 2.7× safety margin. The slippage sensitivity table reveals that returns degrade gracefully up to 20 bps of slippage but collapse at 50+ bps, establishing a hard operational constraint: the system must execute in liquid markets (which the opening auction at 9:35 AM ET ensures — opening volume is the deepest liquidity pool of the day). This analysis directly informed the choice of IB tiered commission model over flat-rate, saving approximately $50K over the replay period.
 
 ### Regime Resilience
 
@@ -424,6 +429,40 @@ The replay pipeline includes an automated **parity test** that compares replay e
 - **Equity Curve Correlation:** 0.9832 (normalized)
 
 Expected sources of drift: the replay uses Option-D order flow (market entry → GTC stop-loss) while the backtest uses flat slippage, and the backtest's compounded equity base from prior years differs from the replay's fresh $100K start. The high equity correlation (0.98) confirms the core signal logic is consistent between engines.
+
+---
+
+## Validation Tests — T+1 Execution Bias Analysis
+
+To ensure the strategy's alpha is genuine and not an artifact of look-ahead bias, three independent validation suites are maintained:
+
+### T+1 Execution Bias (3-Scenario Replay)
+
+Runs the full animated replay pipeline three times with different execution timing assumptions:
+
+| Scenario | Signal Source | Fill Price | Sharpe | Return | Max DD | Win Rate |
+|----------|--------------|------------|--------|--------|--------|----------|
+| **T+0 Close** (baseline) | Day T close | Day T close | 6.99 | +1608.5% | -6.18% | 66.7% |
+| **T+1 Open** (production) | Day T close | Day T+1 open | 6.00 | +1124.5% | -8.02% | 65.2% |
+| **T+1 Close** (worst case) | Day T close | Day T+1 close | 3.48 | +274.8% | -9.12% | 57.6% |
+
+**Key findings:**
+- **Sharpe decay T+0 → T+1 Open: -14.2%** — modest and expected. A Sharpe of 6.00 is still institutional-grade.
+- **Sharpe decay T+0 → T+1 Close: -50.2%** — signals are most potent at the moment they fire; by next-day close, the reversion has partially played out.
+- **Win rate stability** (66.7% → 65.2%): The signal correctly identifies which stocks will revert — you just get a slightly worse fill at T+1 Open.
+- **VM executes at 9:35 AM ET**, so real-world performance aligns with the T+1 Open scenario (Sharpe ~6.00).
+
+### Standalone Validation Tests (`validation_tests.ipynb`)
+
+| Test | Result | Verdict |
+|------|--------|---------|
+| **T+1 Delay** | Sharpe 6.99 → 3.51 (-49.8%) | ⚠️ Moderate concern (now mitigated by switching to T+1 Open execution) |
+| **Out-of-Universe** | OOU/IU Sharpe ratio = 0.89 | ⚠️ Warning — edge may be partially generic rather than mean-reversion-specific |
+| **Slippage Stress** | Break-even at 71 bps (current: 10 bps) | ✅ Strong pass — 7.1× safety margin |
+
+### Verdict
+
+The strategy's alpha survives T+1 execution constraints. The switch from T+0 Close (3:55 PM ET) to T+1 Open (9:35 AM ET) eliminates look-ahead bias at a cost of ~14% Sharpe decay — a favorable trade-off for a production system where execution integrity matters more than marginal backtested performance.
 
 ---
 
@@ -478,7 +517,7 @@ python src/main_trader.py [OPTIONS]
 
 --mode {shadow,live}        Trading mode (default: shadow)
 --once                      Run single cycle and exit
---interval SECONDS          Seconds between cycles (0 = daily at 3:55 PM ET)
+--interval SECONDS          Seconds between cycles (0 = daily at 9:35 AM ET)
 --push-dashboard            Auto-commit dashboard to GitHub Pages
 --update-dashboard-only     Refresh dashboard without trading
 --no-dashboard              Skip dashboard generation
