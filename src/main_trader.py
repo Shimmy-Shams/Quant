@@ -452,13 +452,43 @@ def _seed_equity_history(conn: AlpacaConnection) -> None:
         logger.warning(f"Could not seed equity history: {e}")
 
 
-def _post_close_refresh(conn: AlpacaConnection, push: bool) -> None:
-    """Full dashboard refresh at 4:05 PM ET with final closing data."""
+def _post_trade_refresh(conn: AlpacaConnection, push: bool) -> None:
+    """Dashboard refresh at 10:00 AM ET — captures post-trade state after 9:35 AM execution."""
     import pytz
     et = pytz.timezone("US/Eastern")
     now_et = datetime.now(et)
 
-    # Target: 4:05 PM ET today
+    target = now_et.replace(hour=10, minute=0, second=0, microsecond=0)
+
+    if now_et >= target:
+        logger.info("Already past 10:00 AM ET — skipping post-trade refresh")
+        return
+
+    wait_secs = (target - now_et).total_seconds()
+    if wait_secs > 1800:  # >30 min — too early, skip
+        logger.info(
+            f"Post-trade refresh: {wait_secs:.0f}s until 10:00 AM ET — too far, skipping"
+        )
+        return
+
+    logger.info(f"Post-trade refresh: waiting {wait_secs:.0f}s until 10:00 AM ET...")
+    _interruptible_sleep(wait_secs)
+
+    if SHUTDOWN_REQUESTED:
+        return
+
+    logger.info("Post-trade refresh: capturing post-execution state...")
+    _save_live_state(conn)
+    _generate_and_push_dashboard(push)
+    logger.info("Post-trade refresh complete ✓")
+
+
+def _post_close_refresh(conn: AlpacaConnection, push: bool) -> None:
+    """Dashboard refresh at 4:05 PM ET — captures final closing data."""
+    import pytz
+    et = pytz.timezone("US/Eastern")
+    now_et = datetime.now(et)
+
     target = now_et.replace(hour=16, minute=5, second=0, microsecond=0)
 
     if now_et >= target:
@@ -466,13 +496,8 @@ def _post_close_refresh(conn: AlpacaConnection, push: bool) -> None:
         return
 
     wait_secs = (target - now_et).total_seconds()
-    if wait_secs > 1200:  # >20 min means daily cycle ran early — skip
-        logger.info(
-            f"Post-close refresh: {wait_secs:.0f}s until 4:05 PM ET — too far, skipping"
-        )
-        return
 
-    logger.info(f"Post-close refresh: waiting {wait_secs:.0f}s until 4:05 PM ET...")
+    logger.info(f"Post-close refresh: waiting {wait_secs / 3600:.1f}h until 4:05 PM ET...")
     _interruptible_sleep(wait_secs)
 
     if SHUTDOWN_REQUESTED:
@@ -983,12 +1008,15 @@ def main():
             last_trade_date = today
             logger.info(f"Cycle {cycle_count} result: {result}")
 
-            # ── Generate Dashboard ──
+            # ── Generate Dashboard (immediate post-trade) ──
             if not args.no_dashboard:
                 _generate_and_push_dashboard(args.push_dashboard)
 
-            # ── Post-close refresh at 4:05 PM ET (daily mode only) ──
+            # ── Scheduled dashboard refreshes (daily mode only) ──
             if args.interval == 0 and not args.once and not args.no_dashboard:
+                # 10:00 AM ET — post-trade refresh (fills settled)
+                _post_trade_refresh(conn, args.push_dashboard)
+                # 4:05 PM ET — post-close refresh (final closing data)
                 _post_close_refresh(conn, args.push_dashboard)
 
             # ── Exit or sleep ──
