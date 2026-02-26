@@ -143,15 +143,14 @@ class ParameterOptimizer:
         periods = self._generate_wf_periods(dates)
 
         print(f"Running walk-forward optimization: {len(periods)} periods")
+        print(f"{'Period':>8s}  {'Train Window':>25s}  {'Test Window':>25s}  {'Train':>7s}  {'Test':>7s}  {'Entry':>6s}  {'Exit':>5s}  {'SL':>5s}  {'TP':>5s}  {'Hold':>5s}")
+        print("-" * 130)
 
         for i, (train_start, train_end, test_start, test_end) in enumerate(periods):
-            print(f"\nPeriod {i+1}/{len(periods)}")
             train_start_str = train_start.date() if hasattr(train_start, 'date') else train_start
             train_end_str = train_end.date() if hasattr(train_end, 'date') else train_end
             test_start_str = test_start.date() if hasattr(test_start, 'date') else test_start
             test_end_str = test_end.date() if hasattr(test_end, 'date') else test_end
-            print(f"  Train: {train_start_str} to {train_end_str}")
-            print(f"  Test:  {test_start_str} to {test_end_str}")
 
             # Split data
             train_prices = price_data.loc[train_start:train_end]
@@ -177,16 +176,18 @@ class ParameterOptimizer:
             else:
                 raise ValueError(f"Unknown optimization method: {self.config.method}")
 
-            print(f"  Best params: {best_params}")
-            print(f"  Train metric: {train_metric:.3f}")
-
             # Test on out-of-sample period
             test_results = self._backtest_with_params(
                 test_prices, signal_generator, best_params, test_volume, test_regime
             )
 
             test_metric = self._get_metric(test_results, self.config.objective_metric)
-            print(f"  Test metric: {test_metric:.3f}")
+
+            # Compact single-line summary per period
+            _sl = best_params.get('stop_loss_pct')
+            _tp = best_params.get('take_profit_pct')
+            _mh = best_params.get('max_holding_days')
+            print(f"{i+1:>4d}/{len(periods):<3d}  {str(train_start_str)+' → '+str(train_end_str):>25s}  {str(test_start_str)+' → '+str(test_end_str):>25s}  {train_metric:>7.3f}  {test_metric:>7.3f}  {best_params['entry_threshold']:>6.2f}  {best_params['exit_threshold']:>5.2f}  {str(_sl) if _sl is not None else 'None':>5s}  {str(_tp) if _tp is not None else 'None':>5s}  {str(_mh) if _mh is not None else 'None':>5s}")
 
             # Store result
             wf_result = WalkForwardResult(
