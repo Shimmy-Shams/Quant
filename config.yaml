@@ -152,15 +152,15 @@ backtest:
 
   # Entry/Exit Thresholds
   # PHASE B.1: Threshold for gated mode (signal magnitude = 1 + boost * |zscore|)
-  entry_threshold: 3.39      # WF consensus median (was 1.0; range 1.1-4.0 across 34 OOS periods)
-  exit_threshold: 0.54       # WF consensus median (was 0.50; range 0.10-1.50)
+  entry_threshold: 1.5      # WF consensus median (was 1.0; range 1.1-4.0 across 34 OOS periods)
+  exit_threshold: 0.50       # WF consensus median (was 0.50; range 0.10-1.50)
 
   # Risk Management
   # PHASE A OPTIMIZATION: Enabled 8% stop to address avg loss > avg win issue
-  stop_loss_pct: 0.15        # WF consensus numeric median 0.15 (mode=None; kept for safety)
-  short_stop_loss_pct: 0.15  # Short-specific stop loss (overrides stop_loss_pct for shorts)
-  take_profit_pct: 0.20      # WF consensus mode=0.20 (was 0.15)
-  max_holding_days: 20       # WF consensus median=20 (was 5; mode tie 20/30)
+  stop_loss_pct: 0.12        # WF consensus numeric median 0.15 (mode=None; kept for safety)
+  short_stop_loss_pct: 0.12  # Short-specific stop loss (overrides stop_loss_pct for shorts)
+  take_profit_pct: 0.18      # WF consensus mode=0.20 (was 0.15)
+  max_holding_days: 10       # WF consensus median=20 (was 5; mode tie 20/30)
 
   # Short Acceleration Filter (blocks short entries on surging stocks)
   short_accel_filter:
@@ -239,7 +239,7 @@ backtest:
 # =============================================================================
 optimization:
   # Toggle: set to false to skip optimization and use current config params
-  enabled: true
+  enabled: false
 
   # Walk-Forward Settings
   train_period_days: 504    # 2 year training window (covers bull+bear cycles)
