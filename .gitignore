@@ -42,6 +42,13 @@ logs/
 # Signal cache (machine-local, generated per-environment)
 data/snapshots/signal_cache/
 
+# Runtime state files (pushed to dashboard-live branch, not main)
+data/snapshots/signal_history.json
+data/snapshots/trade_history.json
+data/snapshots/live_state.json
+data/snapshots/equity_history.json
+data/snapshots/intraday_equity.json
+
 # Market data -- All Parquet files committed (8.4 MB total, fine for Git)
 # If data grows large (>100 MB), switch to Git LFS or selective includes
 # data/historical/hourly/*.parquet  # Uncomment if hourly data gets big

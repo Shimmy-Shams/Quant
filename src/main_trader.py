@@ -626,52 +626,62 @@ def _log_signal_details(
     """
     Log per-stock signal details for visibility in VM logs.
 
-    Shows:
-      - Actionable signals (above entry threshold) with direction, strength, z-score, price
-      - Summary of near-threshold signals that didn't qualify
+    Always prints a clear summary block showing:
+      - Universe size, valid signals count, actionable count
+      - Actionable signals with direction, strength, z-score, price
+      - Top 5 nearest-to-threshold signals (even on quiet days)
     """
-    # Separate actionable signals (above threshold)
+    valid_count = int((~today_signals.isna()).sum())
     actionable = today_signals[today_signals.abs() > entry_threshold].sort_values()
 
-    if len(actionable) == 0:
-        logger.info(f"  No actionable signals for {date}")
-        return
+    # Always print the summary header
+    logger.info(f"  {'='*52}")
+    logger.info(f"  SIGNAL GENERATION SUMMARY — {date}")
+    logger.info(f"  {'='*52}")
+    logger.info(f"  Universe: {len(today_signals)} symbols | Valid: {valid_count} | Actionable: {len(actionable)} (threshold: {entry_threshold})")
 
-    # Split into LONG (negative signal = buy oversold) and SHORT (positive = sell overbought)
-    longs = actionable[actionable < 0].sort_values()       # most negative first
-    shorts = actionable[actionable > 0].sort_values(ascending=False)  # most positive first
+    if len(actionable) > 0:
+        # Split into LONG (negative signal = buy oversold) and SHORT (positive = sell overbought)
+        longs = actionable[actionable < 0].sort_values()       # most negative first
+        shorts = actionable[actionable > 0].sort_values(ascending=False)  # most positive first
 
-    logger.info(f"  --- Actionable Signals ({date}) ---")
+        if len(longs) > 0:
+            logger.info(f"  LONG candidates ({len(longs)}):")
+            for sym, sig in longs.items():
+                zscore = today_zscores.get(sym, float('nan'))
+                price = today_prices.get(sym, float('nan'))
+                logger.info(
+                    f"    BUY  {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
+                )
 
-    if len(longs) > 0:
-        logger.info(f"  LONG candidates ({len(longs)}):")
-        for sym, sig in longs.items():
-            zscore = today_zscores.get(sym, float('nan'))
-            price = today_prices.get(sym, float('nan'))
-            logger.info(
-                f"    BUY  {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
-            )
+        if len(shorts) > 0:
+            logger.info(f"  SHORT candidates ({len(shorts)}):")
+            for sym, sig in shorts.items():
+                zscore = today_zscores.get(sym, float('nan'))
+                price = today_prices.get(sym, float('nan'))
+                logger.info(
+                    f"    SELL {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
+                )
 
-    if len(shorts) > 0:
-        logger.info(f"  SHORT candidates ({len(shorts)}):")
-        for sym, sig in shorts.items():
-            zscore = today_zscores.get(sym, float('nan'))
-            price = today_prices.get(sym, float('nan'))
-            logger.info(
-                f"    SELL {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
-            )
-
-    # Also show near-miss signals (within 80% of threshold) for context
-    near_threshold = today_signals[
-        (today_signals.abs() > entry_threshold * 0.8) &
-        (today_signals.abs() <= entry_threshold)
+    # Always show top 5 closest-to-threshold (even when nothing is actionable)
+    non_actionable = today_signals[
+        (today_signals.abs() <= entry_threshold) & (~today_signals.isna())
     ]
-    if len(near_threshold) > 0:
-        near_list = ", ".join(
-            f"{sym}({sig:+.2f})" for sym, sig in
-            near_threshold.reindex(near_threshold.abs().sort_values(ascending=False).index).items()
+    if len(non_actionable) > 0:
+        ranked = non_actionable.reindex(
+            non_actionable.abs().sort_values(ascending=False).index
         )
-        logger.info(f"  Near-threshold ({len(near_threshold)}): {near_list}")
+        top_n = ranked.head(5)
+        logger.info(f"  Top {len(top_n)} nearest to threshold:")
+        for sym, sig in top_n.items():
+            pct = abs(sig) / entry_threshold * 100
+            direction = "BUY " if sig < 0 else "SELL"
+            zscore = today_zscores.get(sym, float('nan'))
+            price = today_prices.get(sym, float('nan'))
+            logger.info(
+                f"    {direction} {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f} | ({pct:.0f}% of threshold)"
+            )
+    logger.info(f"  {'='*52}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1301,9 +1311,23 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
             logger.info(f"Dashboard generated: {output_path}")
             
             if auto_push:
-                # Read the generated HTML into memory BEFORE switching branches
-                # (live_state.json gets stashed away during branch switch)
+                # Read files into memory BEFORE switching branches
+                # (working tree gets stashed during branch switch)
                 dashboard_html = output_path.read_text()
+
+                # Snapshot data files to bundle into dashboard-live
+                data_snapshots = {}
+                snapshot_dir = PROJECT_ROOT / "data" / "snapshots"
+                for fname in [
+                    "signal_history.json",
+                    "trade_history.json",
+                    "live_state.json",
+                    "equity_history.json",
+                    "intraday_equity.json",
+                ]:
+                    fpath = snapshot_dir / fname
+                    if fpath.exists():
+                        data_snapshots[fname] = fpath.read_text()
                 
                 # Push to dashboard-live branch (keeps main clean)
                 def _git(*args, **kw):
@@ -1340,19 +1364,26 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                         _git("checkout", "--orphan", "dashboard-live")
                         _git("reset", "--hard")
                     
-                    # Write the pre-generated HTML (NOT regenerating —
-                    # live_state.json/equity_history.json may be stashed)
+                    # Write dashboard HTML
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_text(dashboard_html)
-                    
                     _git("add", "docs/index.html")
+
+                    # Write data snapshots (signal/trade history for dev access)
+                    data_dir = PROJECT_ROOT / "data" / "snapshots"
+                    data_dir.mkdir(parents=True, exist_ok=True)
+                    for fname, content in data_snapshots.items():
+                        (data_dir / fname).write_text(content)
+                        _git("add", f"data/snapshots/{fname}")
+                    
                     commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
                     result = _git("commit", "-m", commit_msg)
                     
                     if result.returncode == 0:
                         push_result = _git("push", "origin", "dashboard-live", "--force", timeout=30)
                         if push_result.returncode == 0:
-                            logger.info("Dashboard pushed to GitHub (dashboard-live branch)")
+                            n_data = len(data_snapshots)
+                            logger.info(f"Dashboard + {n_data} data files pushed to GitHub (dashboard-live branch)")
                         else:
                             logger.warning(f"Git push failed: {push_result.stderr.decode()}")
                     else:
