@@ -227,18 +227,42 @@ def fetch_data(
                 if cached:
                     coverage = len(cached) / len(universe) if universe else 0
                     if coverage >= min_coverage:
-                        all_prices, all_volumes = {}, {}
-                        for sym, df in cached.items():
-                            if len(df) >= 100:
-                                all_prices[sym] = df["close"]
-                                all_volumes[sym] = df["volume"]
-                        if all_prices:
-                            logger.info(
-                                f"Cache is {age_days:.1f}d old, "
-                                f"{len(cached)}/{len(universe)} symbols "
-                                f"({coverage:.0%} coverage) — loading from disk"
+                        # Verify data freshness: check that the majority of
+                        # symbols have data ending on the same (latest) date.
+                        # This catches the case where file mtime is recent
+                        # (re-saved by Hurst) but data content is stale.
+                        end_dates = [
+                            df.index.max() for df in cached.values() if len(df) > 0
+                        ]
+                        if end_dates:
+                            latest_data_date = max(end_dates)
+                            fresh_count = sum(
+                                1 for d in end_dates if d >= latest_data_date
                             )
-                            return pd.DataFrame(all_prices), pd.DataFrame(all_volumes), cached
+                            data_freshness = fresh_count / len(end_dates)
+                        else:
+                            data_freshness = 0.0
+
+                        if data_freshness >= min_coverage:
+                            all_prices, all_volumes = {}, {}
+                            for sym, df in cached.items():
+                                if len(df) >= 100:
+                                    all_prices[sym] = df["close"]
+                                    all_volumes[sym] = df["volume"]
+                            if all_prices:
+                                logger.info(
+                                    f"Cache is {age_days:.1f}d old, "
+                                    f"{len(cached)}/{len(universe)} symbols "
+                                    f"({coverage:.0%} coverage, "
+                                    f"{data_freshness:.0%} fresh) — loading from disk"
+                                )
+                                return pd.DataFrame(all_prices), pd.DataFrame(all_volumes), cached
+                        else:
+                            logger.info(
+                                f"Cache files recent but only {data_freshness:.0%} of "
+                                f"symbols have current data (need {min_coverage:.0%}) "
+                                f"— fetching from API"
+                            )
                     else:
                         logger.info(
                             f"Cache has only {len(cached)}/{len(universe)} symbols "
