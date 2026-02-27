@@ -1298,7 +1298,7 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
         output_path = PROJECT_ROOT / "docs" / "index.html"
         
         if generator.generate(output_path):
-            logger.info(f"✅ Dashboard generated: {output_path}")
+            logger.info(f"Dashboard generated: {output_path}")
             
             if auto_push:
                 # Read the generated HTML into memory BEFORE switching branches
@@ -1306,60 +1306,67 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                 dashboard_html = output_path.read_text()
                 
                 # Push to dashboard-live branch (keeps main clean)
-                try:
-                    git = lambda *args, **kw: subprocess.run(
+                def _git(*args, **kw):
+                    return subprocess.run(
                         ["git", "-C", str(PROJECT_ROOT)] + list(args),
                         capture_output=True, timeout=kw.get("timeout", 15),
                     )
-                    
+
+                def _ensure_main_branch():
+                    """Force-switch back to main branch — always succeeds."""
+                    try:
+                        _git("checkout", "-f", "main")
+                        # Try to pop stash; ignore if empty or conflicts
+                        pop = _git("stash", "pop")
+                        if pop.returncode != 0:
+                            stderr = pop.stderr.decode().strip()
+                            if "No stash entries" not in stderr:
+                                logger.debug(f"Stash pop skipped: {stderr}")
+                                _git("stash", "drop")
+                    except Exception as e:
+                        logger.warning(f"Branch recovery error: {e}")
+
+                try:
                     # Stash any working changes, switch to dashboard-live
-                    git("stash", "--include-untracked")
+                    _git("stash", "--include-untracked")
                     
                     # Ensure dashboard-live branch exists locally
-                    fetch_result = git("fetch", "origin", "dashboard-live", timeout=30)
+                    fetch_result = _git("fetch", "origin", "dashboard-live", timeout=30)
                     if fetch_result.returncode == 0:
-                        git("checkout", "dashboard-live")
-                        git("reset", "--hard", "origin/dashboard-live")
+                        _git("checkout", "dashboard-live")
+                        _git("reset", "--hard", "origin/dashboard-live")
                     else:
                         # Branch doesn't exist yet — create orphan
-                        git("checkout", "--orphan", "dashboard-live")
-                        git("reset", "--hard")
+                        _git("checkout", "--orphan", "dashboard-live")
+                        _git("reset", "--hard")
                     
                     # Write the pre-generated HTML (NOT regenerating —
                     # live_state.json/equity_history.json may be stashed)
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_text(dashboard_html)
                     
-                    git("add", "docs/index.html")
+                    _git("add", "docs/index.html")
                     commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
-                    result = git("commit", "-m", commit_msg)
+                    result = _git("commit", "-m", commit_msg)
                     
                     if result.returncode == 0:
-                        push_result = git("push", "origin", "dashboard-live", "--force", timeout=30)
+                        push_result = _git("push", "origin", "dashboard-live", "--force", timeout=30)
                         if push_result.returncode == 0:
-                            logger.info("✅ Dashboard pushed to GitHub (dashboard-live branch)")
+                            logger.info("Dashboard pushed to GitHub (dashboard-live branch)")
                         else:
-                            logger.warning(f"⚠️  Git push failed: {push_result.stderr.decode()}")
+                            logger.warning(f"Git push failed: {push_result.stderr.decode()}")
                     else:
-                        logger.info("ℹ️  No dashboard changes to commit")
+                        logger.info("No dashboard changes to commit")
                     
-                    # Switch back to main
-                    git("checkout", "main")
-                    git("stash", "pop")
-                        
                 except subprocess.TimeoutExpired:
-                    logger.warning("⚠️  Git operation timed out")
-                    git("checkout", "main")
-                    git("stash", "pop")
+                    logger.warning("Git operation timed out")
                 except Exception as e:
-                    logger.warning(f"⚠️  Git push failed: {e}")
-                    try:
-                        git("checkout", "main")
-                        git("stash", "pop")
-                    except Exception:
-                        pass
+                    logger.warning(f"Dashboard push failed: {e}")
+                finally:
+                    # ALWAYS force-switch back to main (even on failure)
+                    _ensure_main_branch()
         else:
-            logger.warning("⚠️  Dashboard generation failed")
+            logger.warning("Dashboard generation failed")
             
     except Exception as e:
         logger.error(f"Dashboard error: {e}", exc_info=True)
