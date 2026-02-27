@@ -401,6 +401,528 @@ def _save_shadow_state(sim: SimulationEngine) -> None:
         logger.info("No open positions — shadow state cleared")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# SIGNAL CACHE (T+1 Two-Phase Architecture)
+#
+# Phase 1 (post-close ~4:10 PM): generate signals from Day T close → cache
+# Phase 2 (9:35 AM T+1): load cached signals → execute trades
+# ═══════════════════════════════════════════════════════════════════════════
+
+SIGNAL_CACHE_BASE = PROJECT_ROOT / "data" / "snapshots" / "signal_cache"
+
+
+def _signal_cache_dir(mode: TradingMode) -> Path:
+    """Return mode-specific signal cache directory (live/ or shadow/)."""
+    return SIGNAL_CACHE_BASE / mode.value
+
+
+def _save_signal_cache(
+    signal_df: pd.DataFrame,
+    zscore_df: pd.DataFrame,
+    price_df: pd.DataFrame,
+    volume_df: pd.DataFrame,
+    universe: list,
+    mode: TradingMode = TradingMode.LIVE,
+) -> None:
+    """Cache signal generation results for T+1 morning execution (mode-specific)."""
+    cache_dir = _signal_cache_dir(mode)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    signal_df.to_parquet(cache_dir / "signal_df.parquet")
+    zscore_df.to_parquet(cache_dir / "zscore_df.parquet")
+    price_df.to_parquet(cache_dir / "price_df.parquet")
+    volume_df.to_parquet(cache_dir / "volume_df.parquet")
+
+    metadata = {
+        "signal_date": str(signal_df.index[-1].date()),
+        "generated_at": datetime.now().isoformat(),
+        "mode": mode.value,
+        "universe": universe,
+        "n_symbols": len(signal_df.columns),
+        "n_days": len(signal_df),
+    }
+    with open(cache_dir / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    logger.info(
+        f"Cached signals [{mode.value}] for {metadata['signal_date']}: "
+        f"{metadata['n_symbols']} symbols, {metadata['n_days']} days"
+    )
+
+
+def _load_signal_cache(mode: TradingMode = TradingMode.LIVE) -> Optional[dict]:
+    """
+    Load cached signals for T+1 execution (mode-specific).
+
+    Returns dict with signal_df, zscore_df, price_df, volume_df, universe,
+    metadata — or None if no valid cache exists.
+    """
+    cache_dir = _signal_cache_dir(mode)
+    meta_path = cache_dir / "metadata.json"
+    if not meta_path.exists():
+        logger.info(f"No signal cache found for [{mode.value}] mode")
+        return None
+
+    try:
+        with open(meta_path) as f:
+            metadata = json.load(f)
+
+        # Check cache freshness (must be from last 3 calendar days)
+        signal_date = pd.Timestamp(metadata["signal_date"])
+        age_days = (pd.Timestamp.now().normalize() - signal_date).days
+        if age_days > 3:
+            logger.warning(f"Signal cache [{mode.value}] is {age_days} days old — ignoring stale cache")
+            return None
+
+        signal_df = pd.read_parquet(cache_dir / "signal_df.parquet")
+        zscore_df = pd.read_parquet(cache_dir / "zscore_df.parquet")
+        price_df = pd.read_parquet(cache_dir / "price_df.parquet")
+        volume_df = pd.read_parquet(cache_dir / "volume_df.parquet")
+
+        logger.info(
+            f"Loaded cached signals [{mode.value}] from {metadata['signal_date']} "
+            f"({metadata['n_symbols']} symbols, generated {metadata['generated_at'][:16]})"
+        )
+
+        return {
+            "signal_df": signal_df,
+            "zscore_df": zscore_df,
+            "price_df": price_df,
+            "volume_df": volume_df,
+            "universe": metadata["universe"],
+            "metadata": metadata,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to load signal cache [{mode.value}]: {e}")
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SIGNAL DETAIL LOGGING
+# ═══════════════════════════════════════════════════════════════════════════
+
+SIGNAL_HISTORY_PATH = PROJECT_ROOT / "data" / "snapshots" / "signal_history.json"
+TRADE_HISTORY_PATH = PROJECT_ROOT / "data" / "snapshots" / "trade_history.json"
+
+
+def _append_signal_history(
+    date,
+    mode: str,
+    phase: str,
+    today_signals: pd.Series,
+    today_zscores: pd.Series,
+    today_prices: pd.Series,
+    entry_threshold: float,
+) -> None:
+    """
+    Append today's signal snapshot to persistent signal_history.json.
+
+    Tracked in git so local/codespace dev can access VM signal data
+    for model improvement.
+    """
+    actionable = today_signals[today_signals.abs() > entry_threshold]
+
+    signals_detail = []
+    for sym, sig in actionable.items():
+        signals_detail.append({
+            "symbol": sym,
+            "direction": "LONG" if sig < 0 else "SHORT",
+            "signal": round(float(sig), 4),
+            "z_score": round(float(today_zscores.get(sym, float('nan'))), 4),
+            "price": round(float(today_prices.get(sym, float('nan'))), 2),
+        })
+
+    # Sort by absolute signal strength (strongest first)
+    signals_detail.sort(key=lambda x: abs(x["signal"]), reverse=True)
+
+    entry = {
+        "date": str(date),
+        "generated_at": datetime.now().isoformat()[:19],
+        "mode": mode,
+        "phase": phase,
+        "entry_threshold": entry_threshold,
+        "total_valid": int((~today_signals.isna()).sum()),
+        "actionable_count": len(signals_detail),
+        "signals": signals_detail,
+    }
+
+    # Load existing history
+    history = []
+    if SIGNAL_HISTORY_PATH.exists():
+        try:
+            with open(SIGNAL_HISTORY_PATH) as f:
+                history = json.load(f)
+        except (json.JSONDecodeError, Exception):
+            history = []
+
+    # Avoid duplicate entries for same date+mode+phase
+    history = [
+        h for h in history
+        if not (h.get("date") == str(date) and h.get("mode") == mode and h.get("phase") == phase)
+    ]
+
+    history.append(entry)
+
+    # Keep last 365 days of history
+    history = history[-365:]
+
+    SIGNAL_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(SIGNAL_HISTORY_PATH, "w") as f:
+        json.dump(history, f, indent=2)
+
+    logger.info(f"Signal history updated ({len(history)} entries)")
+
+
+def _append_trade_history(
+    date,
+    mode: str,
+    decisions_data: list,
+    portfolio_value: float = 0,
+    cash: float = 0,
+) -> None:
+    """
+    Append today's trade execution results to persistent trade_history.json.
+
+    Tracked in git for post-hoc analysis and model improvement.
+    """
+    entry = {
+        "date": str(date),
+        "executed_at": datetime.now().isoformat()[:19],
+        "mode": mode,
+        "decisions": decisions_data,
+        "decision_count": len(decisions_data),
+        "portfolio_value": round(portfolio_value, 2),
+        "cash": round(cash, 2),
+    }
+
+    history = []
+    if TRADE_HISTORY_PATH.exists():
+        try:
+            with open(TRADE_HISTORY_PATH) as f:
+                history = json.load(f)
+        except (json.JSONDecodeError, Exception):
+            history = []
+
+    # Avoid duplicates for same date+mode
+    history = [h for h in history if not (h.get("date") == str(date) and h.get("mode") == mode)]
+
+    history.append(entry)
+    history = history[-365:]
+
+    TRADE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(TRADE_HISTORY_PATH, "w") as f:
+        json.dump(history, f, indent=2)
+
+    logger.info(f"Trade history updated ({len(history)} entries)")
+
+
+def _log_signal_details(
+    today_signals: pd.Series,
+    today_zscores: pd.Series,
+    today_prices: pd.Series,
+    entry_threshold: float,
+    date,
+) -> None:
+    """
+    Log per-stock signal details for visibility in VM logs.
+
+    Shows:
+      - Actionable signals (above entry threshold) with direction, strength, z-score, price
+      - Summary of near-threshold signals that didn't qualify
+    """
+    # Separate actionable signals (above threshold)
+    actionable = today_signals[today_signals.abs() > entry_threshold].sort_values()
+
+    if len(actionable) == 0:
+        logger.info(f"  No actionable signals for {date}")
+        return
+
+    # Split into LONG (negative signal = buy oversold) and SHORT (positive = sell overbought)
+    longs = actionable[actionable < 0].sort_values()       # most negative first
+    shorts = actionable[actionable > 0].sort_values(ascending=False)  # most positive first
+
+    logger.info(f"  --- Actionable Signals ({date}) ---")
+
+    if len(longs) > 0:
+        logger.info(f"  LONG candidates ({len(longs)}):")
+        for sym, sig in longs.items():
+            zscore = today_zscores.get(sym, float('nan'))
+            price = today_prices.get(sym, float('nan'))
+            logger.info(
+                f"    BUY  {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
+            )
+
+    if len(shorts) > 0:
+        logger.info(f"  SHORT candidates ({len(shorts)}):")
+        for sym, sig in shorts.items():
+            zscore = today_zscores.get(sym, float('nan'))
+            price = today_prices.get(sym, float('nan'))
+            logger.info(
+                f"    SELL {sym:<6s} | signal={sig:+.3f} | z-score={zscore:+.2f} | price=${price:,.2f}"
+            )
+
+    # Also show near-miss signals (within 80% of threshold) for context
+    near_threshold = today_signals[
+        (today_signals.abs() > entry_threshold * 0.8) &
+        (today_signals.abs() <= entry_threshold)
+    ]
+    if len(near_threshold) > 0:
+        near_list = ", ".join(
+            f"{sym}({sig:+.2f})" for sym, sig in
+            near_threshold.reindex(near_threshold.abs().sort_values(ascending=False).index).items()
+        )
+        logger.info(f"  Near-threshold ({len(near_threshold)}): {near_list}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TWO-PHASE EXECUTION FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def run_signal_generation_phase(
+    adapter: AlpacaDataAdapter,
+    config: ConfigLoader,
+    bt_config: BacktestConfig,
+    universe: list,
+    mode: TradingMode = TradingMode.LIVE,
+) -> Optional[dict]:
+    """
+    Phase 1 (Post-Close): Generate and cache signals from today's close data.
+
+    Called after market close (~4:10 PM ET). Results are cached for
+    T+1 morning execution.
+
+    Returns dict with signal_df, zscore_df, price_df, volume_df, universe
+    or None on failure.
+    """
+    phase_start = time.perf_counter()
+    logger.info("=" * 50)
+    logger.info("SIGNAL GENERATION PHASE (Post-Close)")
+    logger.info("=" * 50)
+
+    try:
+        # Step 0: Refresh universe via Hurst recomputation
+        max_symbols = config.get('alpaca.max_universe_size', 60)
+        universe = refresh_universe_hurst(
+            adapter, config, max_symbols=max_symbols, project_root=PROJECT_ROOT
+        )
+        logger.info(f"Universe refreshed: {len(universe)} symbols → {', '.join(universe[:10])}...")
+
+        # Step 1: Fetch data
+        price_df, volume_df, raw_bars = fetch_data(adapter, universe)
+        universe_active = list(price_df.columns)
+        logger.info(
+            f"Data ready: {len(universe_active)} symbols, "
+            f"{len(price_df)} days ({price_df.index[-1].date()})"
+        )
+
+        # Step 2: Generate signals
+        signal_df, zscore_df = generate_signals(config, price_df, volume_df)
+        today = signal_df.index[-1]
+        today_signals = signal_df.loc[today].dropna()
+        today_zscores = zscore_df.loc[today].dropna()
+        today_prices = price_df.loc[today].dropna()
+        entry_count = (today_signals.abs() > bt_config.entry_threshold).sum()
+        logger.info(
+            f"Signals ({today.date()}): {len(today_signals)} valid, "
+            f"{entry_count} above threshold ({bt_config.entry_threshold})"
+        )
+
+        # Log detailed signal breakdown
+        _log_signal_details(today_signals, today_zscores, today_prices, bt_config.entry_threshold, today.date())
+
+        # Persist to signal history (git-tracked for model improvement)
+        _append_signal_history(
+            date=today.date(), mode=mode.value, phase="generation",
+            today_signals=today_signals, today_zscores=today_zscores,
+            today_prices=today_prices, entry_threshold=bt_config.entry_threshold,
+        )
+
+        # Cache for T+1 execution (mode-specific directory)
+        _save_signal_cache(signal_df, zscore_df, price_df, volume_df, universe_active, mode)
+
+        elapsed = time.perf_counter() - phase_start
+        logger.info(f"Signal generation phase complete in {elapsed:.1f}s")
+
+        return {
+            "signal_df": signal_df,
+            "zscore_df": zscore_df,
+            "price_df": price_df,
+            "volume_df": volume_df,
+            "universe": universe_active,
+        }
+    except Exception as e:
+        logger.error(f"Signal generation phase failed: {e}", exc_info=True)
+        return None
+
+
+def run_trade_execution_phase(
+    conn: AlpacaConnection,
+    signal_cache: dict,
+    bt_config: BacktestConfig,
+    mode: TradingMode,
+    executor: Optional[AlpacaExecutor] = None,
+    shadow_sim: Optional[SimulationEngine] = None,
+) -> dict:
+    """
+    Phase 2 (T+1 Open): Execute trades from cached signals.
+
+    Called at 9:35 AM ET. Uses pre-computed signals from last night's
+    close data, combined with current position state and live prices.
+
+    Returns summary dict.
+    """
+    phase_start = time.perf_counter()
+    logger.info("=" * 50)
+    logger.info("TRADE EXECUTION PHASE (T+1 Open)")
+    logger.info("=" * 50)
+
+    signal_df = signal_cache["signal_df"].copy()
+    zscore_df = signal_cache["zscore_df"].copy()
+    price_df = signal_cache["price_df"].copy()
+    volume_df = signal_cache["volume_df"].copy()
+
+    today_signal = signal_df.index[-1]
+    today_signals = signal_df.loc[today_signal].dropna()
+    today_zscores = zscore_df.loc[today_signal].dropna()
+    today_prices = price_df.loc[today_signal].dropna()
+    entry_count = (today_signals.abs() > bt_config.entry_threshold).sum()
+    logger.info(
+        f"Loaded signals from {today_signal.date()}: "
+        f"{len(today_signals)} valid, {entry_count} above threshold"
+    )
+
+    # Log detailed signal breakdown for execution visibility
+    _log_signal_details(today_signals, today_zscores, today_prices, bt_config.entry_threshold, today_signal.date())
+
+    # Persist to signal history (git-tracked for model improvement)
+    _append_signal_history(
+        date=today_signal.date(), mode=mode.value, phase="execution",
+        today_signals=today_signals, today_zscores=today_zscores,
+        today_prices=today_prices, entry_threshold=bt_config.entry_threshold,
+    )
+
+    result = {"date": str(today_signal.date()), "mode": mode.value, "phase": "execution"}
+
+    if mode == TradingMode.SHADOW:
+        assert shadow_sim is not None
+        day_result = shadow_sim.process_shadow_day(
+            date=today_signal,
+            signal_df=signal_df,
+            price_df=price_df,
+            volume_df=volume_df,
+            exit_signal_df=zscore_df,
+            config=bt_config,
+            verbose=True,
+        )
+        result.update(day_result)
+        _save_shadow_state(shadow_sim)
+
+    elif mode == TradingMode.LIVE:
+        assert executor is not None
+
+        # Get actual entry dates from Alpaca order history
+        entry_dates = _get_entry_dates_from_orders(conn)
+
+        # Get current live positions
+        current_positions: Dict[str, Dict] = {}
+        for pos in conn.get_positions():
+            sym = pos["symbol"]
+            current_positions[sym] = {
+                "qty": int(pos["qty"]),
+                "side": "long" if int(pos["qty"]) > 0 else "short",
+                "entry_price": float(pos["avg_entry_price"]),
+                "entry_date": entry_dates.get(sym, pd.Timestamp.now() - pd.Timedelta(days=1)),
+            }
+
+        # Fetch real-time prices for exit evaluation
+        held_symbols = list(current_positions.keys())
+        live_prices = conn.get_latest_trades(held_symbols) if held_symbols else {}
+
+        # Overlay live prices onto the cached price DataFrame
+        if live_prices:
+            live_row = price_df.iloc[-1].copy()
+            for sym, px in live_prices.items():
+                if sym in live_row.index and px > 0:
+                    live_row[sym] = px
+            cache_date = price_df.index[-1].date()
+            real_today = pd.Timestamp.now().normalize().date()
+            if cache_date < real_today:
+                new_idx = pd.Timestamp(real_today)
+                price_df.loc[new_idx] = live_row
+                signal_df.loc[new_idx] = signal_df.iloc[-1]  # carry forward signals
+                zscore_df.loc[new_idx] = zscore_df.iloc[-1]
+                today_signal = new_idx
+                logger.info(
+                    f"Overlaid {len(live_prices)} live prices onto cached data "
+                    f"({cache_date} → {real_today})"
+                )
+            else:
+                for sym, px in live_prices.items():
+                    if sym in price_df.columns and px > 0:
+                        price_df.iloc[-1][sym] = px
+
+        decisions = executor.generate_decisions_from_signals(
+            signal_df=signal_df,
+            price_df=price_df,
+            volume_df=volume_df,
+            exit_signal_df=zscore_df,
+            date=today_signal,
+            current_positions=current_positions,
+            config=bt_config,
+        )
+
+        if decisions:
+            current_prices = price_df.iloc[-1]
+            results = executor.execute_decisions(decisions, current_prices)
+            filled = sum(1 for r in results if r.status in ("filled", "submitted"))
+            logger.info(f"Executed {len(decisions)} decisions -> {filled} filled")
+            decisions_data = []
+            for r in results:
+                status_ok = r.status in ("filled", "submitted")
+                logger.info(
+                    f"  {'OK' if status_ok else 'FAIL'} {r.decision.symbol} {r.decision.action} "
+                    f"x{r.decision.target_qty} -> {r.status}"
+                )
+                decisions_data.append({
+                    "symbol": r.decision.symbol,
+                    "action": r.decision.action,
+                    "qty": r.decision.target_qty,
+                    "status": r.status,
+                    "price": round(float(current_prices.get(r.decision.symbol, 0)), 2),
+                })
+            result["decisions"] = len(decisions)
+            result["filled"] = filled
+        else:
+            logger.info("No trade signals today")
+            result["decisions"] = 0
+            decisions_data = []
+
+        # Account summary
+        account = conn.get_account()
+        logger.info(
+            f"Account: ${account['portfolio_value']:,.2f} "
+            f"(cash: ${account['cash']:,.2f})"
+        )
+
+        _save_live_state(conn)
+        result["portfolio_value"] = account["portfolio_value"]
+        result["cash"] = account["cash"]
+
+        # Persist trade history (git-tracked for model improvement)
+        _append_trade_history(
+            date=today_signal.date(), mode=mode.value,
+            decisions_data=decisions_data,
+            portfolio_value=float(account["portfolio_value"]),
+            cash=float(account["cash"]),
+        )
+
+    elapsed = time.perf_counter() - phase_start
+    result["execution_seconds"] = round(elapsed, 1)
+    logger.info(f"Trade execution phase complete in {elapsed:.1f}s")
+    return result
+
+
 def _seed_equity_history(conn: AlpacaConnection) -> None:
     """Backfill equity_history.json from Alpaca portfolio history API."""
     equity_history_file = PROJECT_ROOT / "data" / "snapshots" / "equity_history.json"
@@ -746,6 +1268,21 @@ def _interruptible_sleep(seconds: float) -> None:
         time.sleep(min(1.0, end - time.time()))
 
 
+def _wait_for_post_close() -> None:
+    """Wait until 4:10 PM ET for daily bars to settle before signal generation."""
+    import pytz
+    et = pytz.timezone("US/Eastern")
+    now_et = datetime.now(et)
+    target = now_et.replace(hour=16, minute=10, second=0, microsecond=0)
+
+    if now_et >= target:
+        return  # Already past 4:10 PM ET
+
+    wait_secs = (target - now_et).total_seconds()
+    logger.info(f"Waiting {wait_secs/60:.0f}min until 4:10 PM ET for daily bar settlement...")
+    _interruptible_sleep(wait_secs)
+
+
 def _generate_and_push_dashboard(auto_push: bool = False) -> None:
     """
     Generate static dashboard and optionally push to GitHub.
@@ -864,6 +1401,10 @@ def parse_args():
         "--update-dashboard-only", action="store_true",
         help="Update dashboard with current Alpaca positions/prices and exit (no trading)"
     )
+    parser.add_argument(
+        "--generate-signals", action="store_true",
+        help="Manually run signal generation phase and exit (for cache priming)"
+    )
     return parser.parse_args()
 
 
@@ -883,6 +1424,48 @@ def main():
         _save_live_state(conn)
         _generate_and_push_dashboard(auto_push=True)
         logger.info("Dashboard updated and pushed (dashboard-only mode)")
+        return
+
+    # ── Manual signal generation: generate signals now and exit ──
+    if args.generate_signals:
+        mode = TradingMode.LIVE if args.mode == "live" else TradingMode.SHADOW
+        log_dir = PROJECT_ROOT / "data" / "logs"
+        setup_logging(log_dir, args.log_level)
+        logger.info("=" * 60)
+        logger.info(f"  MANUAL SIGNAL GENERATION — {mode.value.upper()} MODE")
+        logger.info("=" * 60)
+
+        config = ConfigLoader()
+        bt_config = config.to_backtest_config()
+
+        alpaca_config = AlpacaConfig.from_env()
+        alpaca_config.trading_mode = mode
+        conn = AlpacaConnection(alpaca_config)
+        conn.test_connection()
+
+        adapter = AlpacaDataAdapter(
+            data_client=conn.data_client,
+            data_feed=alpaca_config.data_feed,
+            cache_dir=PROJECT_ROOT / "data" / "snapshots" / "alpaca_cache",
+        )
+
+        max_symbols = config.get('alpaca.max_universe_size', 60)
+        universe = select_universe(config, max_symbols=max_symbols, project_root=PROJECT_ROOT)
+        logger.info(f"Universe: {len(universe)} symbols")
+
+        result = run_signal_generation_phase(
+            adapter=adapter, config=config,
+            bt_config=bt_config, universe=universe, mode=mode,
+        )
+
+        if result:
+            logger.info(
+                f"Signal generation complete — cached {len(result['universe'])} symbols "
+                f"for {mode.value} mode T+1 execution"
+            )
+        else:
+            logger.error("Signal generation FAILED")
+            sys.exit(1)
         return
 
     mode = TradingMode.LIVE if args.mode == "live" else TradingMode.SHADOW
@@ -963,81 +1546,148 @@ def main():
         )
 
     # ── Main loop ──
+    # Two-phase T+1 architecture:
+    #   Phase 1 (post-close ~4:10 PM): Generate signals from Day T close → cache
+    #   Phase 2 (9:35 AM T+1): Load cached signals → execute trades
+    #   Between: Intraday monitor watches held positions (09:45–15:50)
+    #
+    # First run (no cache): skips execution, generates signals post-close.
+    # Subsequent days: cached signals drive morning execution.
     cycle_count = 0
     last_trade_date = None
+    last_signal_date = None
 
     while not SHUTDOWN_REQUESTED:
         try:
-            # ── Intraday monitoring (runs before daily signal window) ──
-            if monitor is not None and args.interval == 0 and not args.once:
+            # ── Non-trading day → sleep ──
+            if not is_market_day():
+                logger.info("Non-trading day — sleeping until next check...")
+                _interruptible_sleep(3600)
+                continue
+
+            today = pd.Timestamp.now().normalize()
+
+            # ═══════════════════════════════════════════════════════
+            # --once and --interval modes: legacy full cycle
+            # (signal gen + execution in one shot — for cron / testing)
+            # ═══════════════════════════════════════════════════════
+            if args.once or args.interval > 0:
+                cycle_count += 1
+                logger.info(f"\n{'─'*50}")
+                logger.info(f"CYCLE {cycle_count} — {datetime.now():%Y-%m-%d %H:%M:%S}")
+                logger.info(f"{'─'*50}")
+
+                result = run_daily_cycle(
+                    conn=conn, adapter=adapter, config=config,
+                    bt_config=bt_config, universe=universe, mode=mode,
+                    shadow_sim=shadow_sim, executor=executor,
+                )
+                last_trade_date = today
+                logger.info(f"Cycle {cycle_count} result: {result}")
+
+                if not args.no_dashboard:
+                    _generate_and_push_dashboard(args.push_dashboard)
+
+                if args.once:
+                    logger.info("--once flag: exiting after single cycle")
+                    break
+                _interruptible_sleep(args.interval)
+                continue
+
+            # ═══════════════════════════════════════════════════════
+            # PHASE 2: Trade Execution (9:35 AM ET)
+            # Load cached signals from last night's post-close gen
+            # ═══════════════════════════════════════════════════════
+            exec_wait = seconds_until_execution_window()
+
+            if exec_wait > 0:
+                # Before execution window → sleep until it opens
+                hours = exec_wait / 3600
+                if hours > 1:
+                    logger.info(f"Execution window in {hours:.1f}h (9:35 AM ET) — sleeping...")
+                else:
+                    logger.info(f"Execution window in {exec_wait/60:.0f}min — sleeping...")
+                _interruptible_sleep(min(exec_wait, 3600))
+                continue
+
+            if exec_wait == 0 and last_trade_date != today:
+                # In execution window → execute trades from cached signals
+                signal_cache = _load_signal_cache(mode)
+
+                if signal_cache is not None:
+                    cycle_count += 1
+                    logger.info(f"\n{'─'*50}")
+                    logger.info(f"CYCLE {cycle_count} — {datetime.now():%Y-%m-%d %H:%M:%S}")
+                    logger.info(f"{'─'*50}")
+
+                    result = run_trade_execution_phase(
+                        conn=conn, signal_cache=signal_cache,
+                        bt_config=bt_config, mode=mode,
+                        executor=executor, shadow_sim=shadow_sim,
+                    )
+                    last_trade_date = today
+                    logger.info(f"Cycle {cycle_count} result: {result}")
+
+                    # Immediate post-trade dashboard
+                    if not args.no_dashboard:
+                        _generate_and_push_dashboard(args.push_dashboard)
+                        _post_trade_refresh(conn, args.push_dashboard)
+                else:
+                    logger.warning(
+                        "No cached signals available — skipping trade execution. "
+                        "Signals will be generated after market close today."
+                    )
+                    last_trade_date = today  # Don't re-check every hour
+
+            elif exec_wait < 0 and last_trade_date != today:
+                # Past execution window (e.g. service restarted mid-day)
+                logger.info(
+                    "Past execution window — skipping trade execution for today. "
+                    "Will generate signals after market close."
+                )
+                last_trade_date = today
+
+            # ═══════════════════════════════════════════════════════
+            # INTRADAY MONITOR (09:45–15:50 ET)
+            # Monitors held positions for dynamic exits
+            # ═══════════════════════════════════════════════════════
+            if monitor is not None:
                 monitor.reset_session()
                 monitor.run()  # Blocks until stop_time_et or shutdown
                 if SHUTDOWN_REQUESTED:
                     break
 
-            # Wait for execution window (unless running on interval/once)
-            if args.interval == 0 and not args.once:
-                wait_for_execution_window(interval_sec=3600)
-                if SHUTDOWN_REQUESTED:
-                    break
-
-            # Skip if already traded today
-            today = pd.Timestamp.now().normalize()
-            if last_trade_date == today and not args.once:
-                logger.info(f"Already traded today ({today.date()}) — sleeping until tomorrow")
-                _interruptible_sleep(3600)
-                continue
-
-            # ── Execute cycle ──
-            cycle_count += 1
-            logger.info(f"\n{'─'*50}")
-            logger.info(f"CYCLE {cycle_count} — {datetime.now():%Y-%m-%d %H:%M:%S}")
-            logger.info(f"{'─'*50}")
-
-            result = run_daily_cycle(
-                conn=conn,
-                adapter=adapter,
-                config=config,
-                bt_config=bt_config,
-                universe=universe,
-                mode=mode,
-                shadow_sim=shadow_sim,
-                executor=executor,
-            )
-
-            last_trade_date = today
-            logger.info(f"Cycle {cycle_count} result: {result}")
-
-            # ── Generate Dashboard (immediate post-trade) ──
-            if not args.no_dashboard:
-                _generate_and_push_dashboard(args.push_dashboard)
-
-            # ── Scheduled dashboard refreshes (daily mode only) ──
-            if args.interval == 0 and not args.once and not args.no_dashboard:
-                # 10:00 AM ET — post-trade refresh (fills settled)
-                _post_trade_refresh(conn, args.push_dashboard)
-                # 4:05 PM ET — post-close refresh (final closing data)
-                _post_close_refresh(conn, args.push_dashboard)
-
-            # ── Exit or sleep ──
-            if args.once:
-                logger.info("--once flag: exiting after single cycle")
+            # ═══════════════════════════════════════════════════════
+            # PHASE 1: Signal Generation (Post-Close ~4:10 PM ET)
+            # Generate tomorrow's signals from today's close data
+            # ═══════════════════════════════════════════════════════
+            _wait_for_post_close()
+            if SHUTDOWN_REQUESTED:
                 break
 
-            if args.interval > 0:
-                logger.info(f"Sleeping {args.interval}s until next cycle...")
-                _interruptible_sleep(args.interval)
-            else:
-                # Daily mode: sleep until tomorrow
-                logger.info("Daily mode — sleeping until next trading day...")
-                _interruptible_sleep(3600)  # Re-check hourly
+            if last_signal_date != today:
+                sig_result = run_signal_generation_phase(
+                    adapter=adapter, config=config,
+                    bt_config=bt_config, universe=universe, mode=mode,
+                )
+                if sig_result is not None:
+                    last_signal_date = today
+                    universe = sig_result["universe"]
+
+            # ── Post-close dashboard refresh ──
+            if not args.no_dashboard:
+                _save_live_state(conn)
+                _generate_and_push_dashboard(args.push_dashboard)
+
+            # ── Sleep until next trading day ──
+            logger.info("Daily cycle complete — sleeping until next trading day...")
+            _interruptible_sleep(3600)
 
         except KeyboardInterrupt:
             break
         except Exception as e:
             logger.error(f"Cycle error: {e}", exc_info=True)
-            # Back off on errors, then retry
-            _interruptible_sleep(min(300, args.interval or 300))
+            _interruptible_sleep(300)
 
     # ── Shutdown ──
     logger.info("=" * 60)

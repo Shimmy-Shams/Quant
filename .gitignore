@@ -39,6 +39,9 @@ wheels/
 *.log
 logs/
 
+# Signal cache (machine-local, generated per-environment)
+data/snapshots/signal_cache/
+
 # Market data -- All Parquet files committed (8.4 MB total, fine for Git)
 # If data grows large (>100 MB), switch to Git LFS or selective includes
 # data/historical/hourly/*.parquet  # Uncomment if hourly data gets big

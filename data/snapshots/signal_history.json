@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2026-02-23",
+    "generated_at": "2026-02-26T20:08:26",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 88,
+    "actionable_count": 4,
+    "signals": [
+      {
+        "symbol": "RYAN",
+        "direction": "LONG",
+        "signal": -2.9888,
+        "z_score": -3.9776,
+        "price": 39.0
+      },
+      {
+        "symbol": "ADSK",
+        "direction": "LONG",
+        "signal": -2.5168,
+        "z_score": -3.0336,
+        "price": 218.69
+      },
+      {
+        "symbol": "PATK",
+        "direction": "SHORT",
+        "signal": 1.9282,
+        "z_score": -3.1283,
+        "price": 130.08
+      },
+      {
+        "symbol": "HQY",
+        "direction": "LONG",
+        "signal": -1.6104,
+        "z_score": -1.2208,
+        "price": 75.84
+      }
+    ]
+  }
+]
