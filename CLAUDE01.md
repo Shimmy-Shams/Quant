@@ -3,7 +3,7 @@
 **Environment**: Local VS Code (Windows)  
 **Claude Instance**: CLAUDE01 (Local)  
 **Paired With**: CLAUDE02.md (Codespaces - for development)  
-**Last Updated**: 2026-02-15 (end of 20-year data collection)
+**Last Updated**: 2026-02-26 (2-phase T+1 architecture, VM deployment)
 
 ---
 
@@ -17,8 +17,41 @@ Building a live algorithmic trading bot with Interactive Brokers paper trading i
 - Phase 1 COMPLETE -- IB data infrastructure built (2 years data)
 - Phase 2 COMPLETE (Codespaces/CLAUDE02) -- Mean reversion engine built, optimized (+27.2% return, Sharpe 0.82)
 - Phase 2B COMPLETE (Local) -- Yahoo Finance 20-year data collection for robust backtesting
+- Phase 3 COMPLETE (Local/VM) -- Live paper trading on Oracle Cloud VM with Alpaca
 - Account is in CAD -- code handles multi-currency
-- Ready for extended backtesting with 20 years of historical data
+- VM is LIVE: Oracle Cloud (40.233.100.95), systemd service `quant-trader`, running 24/7
+
+**Completed - Phase 3: Live Trading & VM Deployment** (2026-02-26)
+- Oracle Cloud VM deployed (Ubuntu, 40.233.100.95, SSH as `ubuntu`)
+- Alpaca paper trading integration (replacing IB for headless VM operation)
+- `main_trader.py` -- headless 24/7 trader with 2-phase T+1 architecture
+- **2-Phase T+1 Architecture** (critical fix for zero-signal bug):
+  - Phase 1 (Post-Close ~4:10 PM ET): Generate signals from Day T close data, cache to parquet
+  - Phase 2 (9:35 AM T+1): Load cached signals, overlay live prices, execute trades
+  - Intraday Monitor (09:45-15:50): Watch held positions for dynamic exits
+  - Eliminates T+0 look-ahead bias; validated Sharpe 6.00 at T+1 vs 6.99 at T+0
+- **Mode-aware signal cache**: Separate directories for `live/` and `shadow/` modes
+  - Path: `data/snapshots/signal_cache/{live,shadow}/` (gitignored, environment-specific)
+- **Manual signal trigger**: `--generate-signals` CLI flag for cache priming
+  - Usage: `python main_trader.py --mode live --generate-signals`
+- **Signal & trade history** (git-tracked for model improvement):
+  - `data/snapshots/signal_history.json` -- daily signal snapshots (symbol, direction, strength, z-score, price)
+  - `data/snapshots/trade_history.json` -- daily execution results (decisions, fills, portfolio value)
+  - Both accumulate up to 365 days, deduplicated by date+mode+phase
+- **Detailed signal logging**: Per-stock breakdown in VM logs (BUY/SELL, signal, z-score, price)
+  - Also logs near-threshold signals (within 80% of threshold) for context
+- **Intraday monitor tests**: 30 unit tests covering stop-loss, trailing stop, time-decay, circuit breaker, edge cases
+- **VM architecture**:
+  - Users: `ubuntu` (SSH login), `trader` (service runner), `opc` (Oracle default)
+  - Service: `quant-trader.service` (systemd, auto-restart, 2GB memory limit, 50% CPU cap)
+  - Service config: `/etc/systemd/system/quant-trader.service`
+  - Codebase: `/home/trader/Quant/` with `venv/` (not `.venv`)
+  - Env vars: `/home/trader/Quant/.env` (Alpaca API keys)
+  - Git remote: HTTPS (`https://github.com/Shimmy-Shams/Quant.git`)
+  - Dashboard push currently broken (HTTPS needs PAT for push; SSH deploy key needed)
+- **Bug fixed**: Main loop ordering caused zero signals -- intraday monitor blocked until 15:50, past execution window
+- Current paper account: ~$991K portfolio value, 4 open positions (ADBE, DY, LOW, RYAN)
+- `.venv` created locally for testing (Python 3.11.1, all packages from requirements.txt + pytest)
 
 **Completed - Phase 2B** (2026-02-15)
 - Yahoo Finance data collector built (20-year historical data capability)
@@ -47,7 +80,7 @@ Building a live algorithmic trading bot with Interactive Brokers paper trading i
 - Options collector refactored: batch qualify + batch market data + ATM strike filtering
 - All data pushed to GitHub for Codespaces access
 
-**Current Phase**: Extended Backtesting with 20-year data (next)
+**Current Phase**: ML Filter development (Phase 4) and model improvement using signal/trade history data
 
 ## Strategy Direction (CONFIRMED)
 
@@ -145,21 +178,72 @@ Multi-criteria filtering with live constituent fetching:
 
 **Next Action:** Push 20-year data to GitHub, run extended backtest in Codespaces to validate mean reversion engine across 20-year period
 
-### Phase 3: ML Filter
+### Phase 3: Live Trading & VM Deployment (COMPLETE -- Local/VM)
+- [x] Oracle Cloud VM setup (Ubuntu, systemd service, auto-restart)
+- [x] Alpaca paper trading integration (headless, no TWS dependency)
+- [x] 2-phase T+1 architecture (post-close signal gen + morning execution)
+- [x] Mode-aware signal cache (separate live/shadow parquet directories)
+- [x] Manual signal trigger (`--generate-signals` CLI flag)
+- [x] Persistent signal & trade history (git-tracked JSON for model improvement)
+- [x] Detailed per-stock signal logging (direction, strength, z-score, price)
+- [x] Intraday monitor (stop-loss, trailing stop, time-decay, circuit breaker)
+- [x] 30 unit tests for intraday monitor (pytest)
+- [x] Dashboard generator with GitHub Pages push
+- [x] Equity history tracking (seeded from Alpaca portfolio history API)
+- [x] Bracket order retrofit for unprotected positions
+
+### Phase 4: ML Filter
 - [ ] Feature engineering from market data
 - [ ] Train classifier to filter mean reversion signals
 - [ ] Compare filtered vs unfiltered performance
 - [ ] Deep research on model selection
+- [ ] Use signal_history.json + trade_history.json for training data
 
-### Phase 4: Options Strategy Layer
+### Phase 5: Options Strategy Layer
 - [ ] IV rank/percentile calculations
 - [ ] Strategy selection logic (stock vs options execution)
 - [ ] Options spread builder (verticals, iron condors)
 
-### Phase 5: Risk & Integration
+### Phase 6: Risk & Integration
 - [ ] Position sizing engine (Kelly criterion / fixed-fractional)
 - [ ] Portfolio-level risk monitoring & correlation checks
 - [ ] Full pipeline: signal -> filter -> execute -> monitor
+
+## VM Operations Quick Reference
+```bash
+# SSH to VM
+ssh -i ~/.ssh/id_rsa ubuntu@40.233.100.95
+
+# Service management
+sudo systemctl status quant-trader
+sudo systemctl stop quant-trader
+sudo systemctl start quant-trader
+sudo systemctl restart quant-trader
+
+# View logs
+sudo journalctl -u quant-trader --since '10 min ago' --no-pager | tail -40
+sudo journalctl -u quant-trader -f  # follow live
+
+# Manual signal generation (run after market close to prime cache)
+sudo -u trader bash -c 'cd /home/trader/Quant/src && /home/trader/Quant/venv/bin/python main_trader.py --mode live --generate-signals'
+
+# Pull latest code to VM
+sudo -u trader bash -c 'cd /home/trader/Quant && git pull origin main'
+
+# Check signal cache
+sudo -u trader ls -la /home/trader/Quant/data/snapshots/signal_cache/live/
+sudo -u trader cat /home/trader/Quant/data/snapshots/signal_cache/live/metadata.json
+```
+
+## main_trader.py CLI Reference
+```bash
+python main_trader.py                              # Shadow mode (default), daily loop
+python main_trader.py --mode live                   # Live paper trading, daily loop
+python main_trader.py --mode live --generate-signals # Manual signal gen, exit after
+python main_trader.py --mode live --once             # Single full cycle (legacy), exit
+python main_trader.py --update-dashboard-only        # Refresh dashboard, exit
+python main_trader.py --mode shadow --interval 300   # Shadow mode, 5-min cycle
+```
 
 ## Hybrid Architecture (Data Flow)
 ```
@@ -170,6 +254,18 @@ LOCAL (this PC)                        CLOUD (Codespaces / GitHub)
 |  -> Saves Parquet   |               | ML Training          |
 | DataStreamer        |               | Reads Parquet files  |
 +---------------------+               +----------------------+
+         |
+         | git push
+         v
++---------------------+
+| VM (Oracle Cloud)   |
+| main_trader.py      |
+|  Phase 1: Signal Gen|
+|  Phase 2: Execution |
+|  Intraday Monitor   |
+| signal_history.json |-- git push -> GitHub (for model improvement)
+| trade_history.json  |
++---------------------+
 ```
 
 ## Notebook Structure
@@ -201,32 +297,66 @@ src/main.ipynb — 11 main sections:
 ```
 Quant/
 ├── CLAUDE01.md / CLAUDE02.md        # Context & planning docs
-├── .env / .env.example              # Configuration
-├── requirements.txt                 # Python dependencies (includes yfinance>=0.2.32)
-├── data/                            # Parquet storage (gitignored for large files)
+├── .env / .env.example              # Configuration (Alpaca API keys)
+├── config.yaml                      # Strategy & trading configuration
+├── requirements.txt                 # Python dependencies
+├── .venv/                           # Local virtual environment (gitignored)
+├── data/
 │   ├── historical/daily/*.parquet   # OHLCV bars (20 years from Yahoo, 2 years from IB)
-│   ├── snapshots/options/*.parquet  # Options chains
+│   ├── logs/                        # Runtime logs (gitignored)
+│   ├── snapshots/
+│   │   ├── alpaca_cache/            # Alpaca data cache (parquet, git-tracked)
+│   │   ├── signal_cache/            # T+1 signal cache (gitignored, env-specific)
+│   │   │   ├── live/                #   Live mode signals
+│   │   │   └── shadow/              #   Shadow mode signals
+│   │   ├── signal_history.json      # Daily signal snapshots (git-tracked)
+│   │   ├── trade_history.json       # Daily trade results (git-tracked)
+│   │   ├── live_state.json          # Current positions/equity (git-tracked)
+│   │   ├── equity_history.json      # Equity curve (git-tracked)
+│   │   ├── intraday_equity.json     # 1D chart data (git-tracked)
+│   │   ├── shadow_state.csv         # Shadow sim state (gitignored)
+│   │   └── options/*.parquet        # Options chains
 │   └── universe/*.parquet           # Dynamic universe snapshots
 ├── docs/
+│   ├── index.html                   # Auto-generated dashboard
 │   ├── IB_SETUP.md                  # IB Gateway/TWS setup guide
-│   └── TWS_SETUP.md                 # TWS-specific instructions
+│   ├── TWS_SETUP.md                 # TWS-specific instructions
+│   └── UNIVERSE_SYSTEM.md           # Universe system docs
 ├── src/
+│   ├── main_trader.py               # Headless 24/7 trader (2-phase T+1 architecture)
+│   ├── strategy_config.py           # ConfigLoader (config.yaml)
+│   ├── dashboard_generator.py       # Static HTML dashboard generator
+│   ├── test_connection.py           # Standalone connection test
 │   ├── config/
-│   │   ├── config.py                      # Config class (.env loader)
-│   │   └── data_collection_config.yaml    # Data collection parameters (NEW)
-│   ├── connection/ib_connection.py  # Smart reconnect, asyncio patching
+│   │   ├── config.py                # Config class (.env loader)
+│   │   └── data_collection_config.yaml
+│   ├── connection/
+│   │   ├── ib_connection.py         # IB TWS connection
+│   │   └── alpaca_connection.py     # Alpaca connection (TradingMode: LIVE/SHADOW)
 │   ├── data/
-│   │   ├── universe_builder.py      # Single source: lists + functions + UniverseBuilder
-│   │   ├── collector.py             # IB historical data downloader (2 years max)
-│   │   ├── yahoo_collector.py       # Yahoo Finance downloader (20 years, NEW)
+│   │   ├── universe_builder.py      # Universe: lists + functions + class
+│   │   ├── collector.py             # IB historical data downloader
+│   │   ├── yahoo_collector.py       # Yahoo Finance downloader (20 years)
+│   │   ├── alpaca_data.py           # Alpaca data adapter (pipeline data)
 │   │   ├── streamer.py              # Real-time quote streaming
 │   │   └── options.py               # Options chain collector
-│   ├── strategies/                  # Future: Mean reversion, ML filter
-│   ├── backtest/                    # Future: Backtesting engine
-│   ├── execution/                   # Future: Order management
+│   ├── strategies/
+│   │   └── mean_reversion.py        # Z-score signal generation (862 lines)
+│   ├── backtest/
+│   │   ├── engine.py                # BacktestConfig, backtesting framework
+│   │   └── optimizer.py             # Optuna-based parameter optimization
+│   ├── execution/
+│   │   ├── alpaca_executor.py       # Live order execution
+│   │   ├── simulation.py            # Shadow/paper simulation engine
+│   │   └── intraday_monitor.py      # Dynamic exit monitor (712 lines)
+│   ├── trading/
+│   │   └── pipeline.py              # Universe select, data fetch, signal gen pipeline
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   └── test_intraday_monitor.py # 30 tests (stop-loss, trailing, time-decay, etc.)
 │   ├── main.ipynb                   # TWS-connected workflow
-│   ├── main_data_collector.ipynb    # Data collection workflow (Yahoo/IB, NEW)
-│   └── test_connection.py           # Standalone connection test
+│   ├── main_data_collector.ipynb    # Data collection workflow
+│   └── main_mean_reversion.ipynb    # Strategy development notebook
 ```
 
 ## Key Technical Details
