@@ -1396,6 +1396,16 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                 finally:
                     # ALWAYS force-switch back to main (even on failure)
                     _ensure_main_branch()
+                    # Restore data files — checkout from dashboard-live
+                    # deletes them because they're tracked there but
+                    # gitignored on main
+                    for fname, content in data_snapshots.items():
+                        try:
+                            dest = snapshot_dir / fname
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            dest.write_text(content)
+                        except Exception:
+                            pass
         else:
             logger.warning("Dashboard generation failed")
             
