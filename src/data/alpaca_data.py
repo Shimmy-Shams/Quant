@@ -409,6 +409,7 @@ class AlpacaDataAdapter:
         need_incremental = False
         incremental_start: Optional[datetime] = None
         cache_age_days = 0
+        per_symbol_stale: List[str] = []  # symbols behind the majority
 
         # ── Step 1: Try loading from cache ─────────────────────────────
         if use_cache and self.cache_dir:
@@ -466,18 +467,53 @@ class AlpacaDataAdapter:
                                       f"{cache_age_days}d ago, "
                                       f"{missed_trading_days} trading day(s) to fetch)")
                         else:
-                            if verbose:
-                                reason = ""
-                                if today.weekday() >= 5:
-                                    reason = " (weekend)"
-                                elif today in _us_market_holidays(today.year):
-                                    reason = " (market holiday)"
-                                elif cache_age_days == 0:
+                            # ── Per-symbol staleness check ──
+                            # Even if the newest symbol is up-to-date,
+                            # other symbols may be days behind (e.g. IEX
+                            # lag).  Detect and mark them for incremental
+                            # update so they don't produce NaN signals.
+                            latest_date = latest_cached_dt.date()
+                            for sym, df in raw_bars.items():
+                                sym_end = pd.Timestamp(df.index.max()).date()
+                                if sym_end < latest_date:
+                                    gap = _trading_days_between(
+                                        sym_end + timedelta(days=1), latest_date
+                                    )
+                                    if gap > 0:
+                                        per_symbol_stale.append(sym)
+
+                            if per_symbol_stale:
+                                need_incremental = True
+                                # Use earliest stale symbol's end + 1 day
+                                earliest_stale = min(
+                                    pd.Timestamp(raw_bars[s].index.max()).to_pydatetime()
+                                    for s in per_symbol_stale
+                                )
+                                incremental_start = earliest_stale + timedelta(days=1)
+                                if verbose:
+                                    print(
+                                        f"   📦 Cache hit: {cache_hit} symbols — "
+                                        f"newest up to date, but {len(per_symbol_stale)} "
+                                        f"symbols are stale (incremental from "
+                                        f"{incremental_start.date()})"
+                                    )
+                                logger.info(
+                                    f"Per-symbol staleness: {len(per_symbol_stale)}/{len(raw_bars)} "
+                                    f"symbols behind {latest_date} — fetching incremental"
+                                )
+                            else:
+                                if verbose:
                                     reason = ""
-                                else:
-                                    reason = " (no missed trading days)"
-                                print(f"   📦 Cache hit: {cache_hit} symbols — "
-                                      f"up to date{reason}, skipping API")
+                                    if today.weekday() >= 5:
+                                        reason = " (weekend)"
+                                    elif today in _us_market_holidays(today.year):
+                                        reason = " (market holiday)"
+                                    elif cache_age_days == 0:
+                                        reason = ""
+                                    else:
+                                        reason = " (no missed trading days)"
+                                    print(f"   📦 Cache hit: {cache_hit} symbols — "
+                                          f"up to date{reason}, skipping API")
 
                 # Symbols not in cache (or cache too short) need full fetch
                 if not cache_too_short:
@@ -494,9 +530,15 @@ class AlpacaDataAdapter:
 
         # ── Step 2: Incremental update for cached symbols ──────────────
         if need_incremental and incremental_start and raw_bars:
-            # Filter out symbols that are known to have no IEX data
-            stale_symbols = [s for s in raw_bars.keys()
-                             if s not in self._no_data_symbols]
+            # Determine which symbols need updating:
+            # - If per_symbol_stale is set, only fetch those specific symbols
+            # - Otherwise (global staleness), fetch all cached symbols
+            if per_symbol_stale:
+                stale_symbols = [s for s in per_symbol_stale
+                                 if s not in self._no_data_symbols]
+            else:
+                stale_symbols = [s for s in raw_bars.keys()
+                                 if s not in self._no_data_symbols]
             if stale_symbols:
                 if verbose:
                     print(f"   🔄 Incremental update: {len(stale_symbols)} symbols "
@@ -516,7 +558,12 @@ class AlpacaDataAdapter:
                         raw_bars[sym] = raw_bars[sym].sort_index()
                         updated += 1
                 if verbose:
-                    print(f"   ✅ Updated {updated} symbols in {dt:.1f}s")
+                    print(f"   ✅ Updated {updated}/{len(stale_symbols)} symbols in {dt:.1f}s")
+                if updated < len(stale_symbols):
+                    logger.warning(
+                        f"Incremental update: only {updated}/{len(stale_symbols)} "
+                        f"symbols returned new data (API/feed gap?)"
+                    )
             else:
                 if verbose:
                     print(f"   ⏭️  All cached symbols are known IEX-absent — skipping API")
