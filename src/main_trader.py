@@ -1228,11 +1228,24 @@ def _restore_shadow_state(sim: SimulationEngine) -> None:
 # SCHEDULING: MARKET-HOURS AWARENESS
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _et_today() -> pd.Timestamp:
+    """Return today's date in US/Eastern timezone (tz-naive, normalized).
+
+    All scheduling guards (last_trade_date, last_signal_date) must use
+    the ET calendar date -- NOT UTC -- so that overnight restarts (when
+    UTC has already rolled to the next day but ET has not) do not
+    prematurely mark the next trading day as handled.
+    """
+    import pytz
+    et = pytz.timezone("US/Eastern")
+    return pd.Timestamp.now(tz=et).normalize().tz_localize(None)
+
+
 def is_market_day() -> bool:
-    """Check if today is a US equity trading day (Mon-Fri, excluding holidays)."""
+    """Check if today (ET) is a US equity trading day (Mon-Fri, excluding holidays)."""
     from pandas.tseries.holiday import USFederalHolidayCalendar
 
-    today = pd.Timestamp.now().normalize()
+    today = _et_today()
     if today.weekday() >= 5:
         return False
 
@@ -1651,7 +1664,7 @@ def main():
                 _interruptible_sleep(3600)
                 continue
 
-            today = pd.Timestamp.now().normalize()
+            today = _et_today()
 
             # ═══════════════════════════════════════════════════════
             # --once and --interval modes: legacy full cycle
