@@ -105,6 +105,8 @@ class TelegramNotifier:
                 if not result.get("ok"):
                     logger.warning(f"Telegram API error: {result}")
                     return False
+                msg_id = result.get("result", {}).get("message_id", "?")
+                logger.info(f"Telegram message sent (id={msg_id})")
                 return True
 
         except Exception as e:
