@@ -220,6 +220,19 @@ Multi-criteria filtering with live constituent fetching:
   - `TELEGRAM_CHAT_ID` -- User's chat ID (2102346549)
 - **VM deployment**: After `git push` + `git pull` on VM, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `/home/trader/Quant/.env`, then restart service
 
+### ET Date Scheduling Fix (COMPLETE -- Codespaces, 2026-02-28)
+- **Bug**: `today = pd.Timestamp.now().normalize()` used UTC in main loop scheduling guards
+  - When service restarts after market close (e.g. 9:35 PM ET Feb 26), UTC has rolled to Feb 27
+  - `last_trade_date` and `last_signal_date` set to Feb 27, blocking the actual Feb 27 trading windows
+  - Result: Friday's Phase 2 (trade execution) and Phase 1 (signal generation) were both skipped
+- **Fix**: Added `_et_today()` helper returning ET-normalized date (tz-naive)
+  - Applied to `is_market_day()` and the main loop `today` variable
+  - At 9:35 PM ET Feb 26: `_et_today()` = Feb 26 (correct); old code: Feb 27 (wrong)
+  - Guards now align with market hours, preventing overnight restarts from poisoning next-day scheduling
+- **Manual signal generation** run on Feb 28 for Friday's close data:
+  - 95 valid signals, 3 actionable (CVS BUY, AGM BUY, VSEC SELL)
+  - Cached for Monday Mar 2 morning execution
+
 ### Phase 5: Options Strategy Layer
 - [ ] IV rank/percentile calculations
 - [ ] Strategy selection logic (stock vs options execution)
