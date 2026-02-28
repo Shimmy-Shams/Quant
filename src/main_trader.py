@@ -65,6 +65,7 @@ from trading.pipeline import (
     build_executor,
     build_simulation,
 )
+from notifications.telegram_notifier import get_notifier
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -751,6 +752,25 @@ def run_signal_generation_phase(
         # Cache for T+1 execution (mode-specific directory)
         _save_signal_cache(signal_df, zscore_df, price_df, volume_df, universe_active, mode)
 
+        # -- Telegram notification: signals generated --
+        _tg = get_notifier()
+        if _tg:
+            actionable = today_signals[today_signals.abs() > bt_config.entry_threshold]
+            actionable_dict = {}
+            for sym, sig in actionable.items():
+                actionable_dict[sym] = {
+                    "signal": float(sig),
+                    "zscore": float(today_zscores.get(sym, 0)),
+                    "price": float(today_prices.get(sym, 0)),
+                }
+            _tg.notify_signals_generated(
+                date=today.date(), mode=mode.value,
+                total_valid=len(today_signals),
+                actionable_count=len(actionable),
+                entry_threshold=bt_config.entry_threshold,
+                actionable_signals=actionable_dict,
+            )
+
         elapsed = time.perf_counter() - phase_start
         logger.info(f"Signal generation phase complete in {elapsed:.1f}s")
 
@@ -763,6 +783,9 @@ def run_signal_generation_phase(
         }
     except Exception as e:
         logger.error(f"Signal generation phase failed: {e}", exc_info=True)
+        _tg = get_notifier()
+        if _tg:
+            _tg.notify_error(str(e), context="Signal generation phase", mode=mode.value)
         return None
 
 
@@ -926,6 +949,16 @@ def run_trade_execution_phase(
             portfolio_value=float(account["portfolio_value"]),
             cash=float(account["cash"]),
         )
+
+        # -- Telegram notification: trades executed --
+        _tg = get_notifier()
+        if _tg:
+            _tg.notify_trade_executed(
+                date=today_signal.date(), mode=mode.value,
+                decisions_data=decisions_data,
+                portfolio_value=float(account["portfolio_value"]),
+                cash=float(account["cash"]),
+            )
 
     elapsed = time.perf_counter() - phase_start
     result["execution_seconds"] = round(elapsed, 1)
@@ -1568,6 +1601,11 @@ def main():
     universe = select_universe(config, max_symbols=max_symbols, project_root=PROJECT_ROOT)
     logger.info(f"Universe: {len(universe)} symbols → {', '.join(universe[:10])}...")
 
+    # ── Telegram: startup notification ──
+    _tg = get_notifier()
+    if _tg:
+        _tg.notify_startup(mode=mode.value, universe_size=len(universe), pid=os.getpid())
+
     # ── Build executor / simulation engine ──
     executor = build_executor(conn, bt_config, mode)
 
@@ -1727,6 +1765,43 @@ def main():
                 _save_live_state(conn)
                 _generate_and_push_dashboard(args.push_dashboard)
 
+            # ── Telegram: daily summary ──
+            _tg = get_notifier()
+            if _tg and mode == TradingMode.LIVE:
+                try:
+                    account = conn.get_account()
+                    pos_list = []
+                    for pos in conn.get_positions():
+                        qty = int(pos["qty"])
+                        entry_px = float(pos["avg_entry_price"])
+                        current_px = float(pos["current_price"])
+                        if qty > 0:
+                            pnl_pct = (current_px - entry_px) / entry_px
+                        else:
+                            pnl_pct = (entry_px - current_px) / entry_px
+                        pos_list.append({
+                            "symbol": pos["symbol"],
+                            "side": "long" if qty > 0 else "short",
+                            "qty": abs(qty),
+                            "entry_price": entry_px,
+                            "current_price": current_px,
+                            "pnl_pct": pnl_pct,
+                        })
+                    day_pnl = float(account.get("equity", 0)) - float(account.get("last_equity", account.get("equity", 0)))
+                    port_val = float(account["portfolio_value"])
+                    day_pnl_pct = day_pnl / port_val if port_val > 0 else 0
+                    _tg.notify_daily_summary(
+                        date=pd.Timestamp.now().date(),
+                        mode=mode.value,
+                        portfolio_value=port_val,
+                        cash=float(account["cash"]),
+                        positions=pos_list,
+                        day_pnl=day_pnl,
+                        day_pnl_pct=day_pnl_pct,
+                    )
+                except Exception as e:
+                    logger.warning(f"Daily summary telegram failed: {e}")
+
             # ── Sleep until next trading day ──
             logger.info("Daily cycle complete — sleeping until next trading day...")
             _interruptible_sleep(3600)
@@ -1735,6 +1810,9 @@ def main():
             break
         except Exception as e:
             logger.error(f"Cycle error: {e}", exc_info=True)
+            _tg = get_notifier()
+            if _tg:
+                _tg.notify_error(str(e), context="Main trading loop", mode=mode.value)
             _interruptible_sleep(300)
 
     # ── Shutdown ──
@@ -1745,6 +1823,10 @@ def main():
         logger.info(f"  Final equity: ${shadow_sim.equity:,.2f}")
         logger.info(f"  Open positions: {len(shadow_sim.positions)}")
     logger.info("=" * 60)
+
+    _tg = get_notifier()
+    if _tg:
+        _tg.notify_shutdown(mode=mode.value, cycles=cycle_count)
 
 
 if __name__ == "__main__":

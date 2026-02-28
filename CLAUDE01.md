@@ -199,6 +199,27 @@ Multi-criteria filtering with live constituent fetching:
 - [ ] Deep research on model selection
 - [ ] Use signal_history.json + trade_history.json for training data
 
+### Telegram Notifications (COMPLETE -- Codespaces, 2026-02-28)
+- [x] Telegram Bot created (BotFather), token + chat ID stored in `.env`
+- [x] `src/notifications/telegram_notifier.py` module (zero external dependencies, uses urllib)
+- [x] Singleton pattern via `get_notifier()` -- lazily initializes from env vars, returns None if not configured
+- [x] Integrated into `main_trader.py` at 7 hook points:
+  - **Startup**: Service started notification (mode, PID, universe size)
+  - **Phase 1 (Signal Generation)**: Signals generated summary (valid count, actionable count, per-symbol details)
+  - **Phase 2 (Trade Execution)**: Trade results (symbol, action, qty, price, status, portfolio value)
+  - **Daily Summary**: Post-close summary (portfolio value, cash, day P&L, open positions)
+  - **Errors**: Signal generation failures + main loop exceptions
+  - **Shutdown**: Service stopped notification (cycles completed)
+- [x] Integrated into `src/execution/intraday_monitor.py`:
+  - **Intraday Exits**: Per-exit notification (symbol, side, reason, entry/exit price, P&L %)
+  - Covers: stop-loss, trailing stop, time-decay, circuit breaker exits
+- [x] All sends are fire-and-forget (catch + log errors, never block trading logic)
+- [x] Tested: 3 real messages sent successfully to Telegram
+- **Env vars** (in `.env`, both Codespaces and VM):
+  - `TELEGRAM_BOT_TOKEN` -- Bot API token from BotFather
+  - `TELEGRAM_CHAT_ID` -- User's chat ID (2102346549)
+- **VM deployment**: After `git push` + `git pull` on VM, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `/home/trader/Quant/.env`, then restart service
+
 ### Phase 5: Options Strategy Layer
 - [ ] IV rank/percentile calculations
 - [ ] Strategy selection logic (stock vs options execution)

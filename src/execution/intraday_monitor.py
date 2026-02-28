@@ -38,6 +38,7 @@ import pytz
 
 from connection.alpaca_connection import AlpacaConnection, TradingMode
 from execution.simulation import SimulationEngine, SimulatedPosition
+from notifications.telegram_notifier import get_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -659,6 +660,20 @@ class IntradayMonitor:
                         )
 
                 self._exited_today.add(sym)
+
+                # -- Telegram notification for intraday exit --
+                _tg = get_notifier()
+                if _tg:
+                    _tg.notify_intraday_exit(
+                        symbol=sym,
+                        side=side,
+                        qty=qty,
+                        reason=reason,
+                        entry_price=ex.get("entry_price"),
+                        exit_price=ex.get("exit_price") or prices.get(sym),
+                        pnl_pct=ex.get("pnl_pct"),
+                        mode=self.mode.value if hasattr(self.mode, 'value') else str(self.mode),
+                    )
 
             except Exception as e:
                 logger.error(f"Failed to exit {sym}: {e}", exc_info=True)

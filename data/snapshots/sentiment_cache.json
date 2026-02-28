@@ -2,1091 +2,1471 @@
   "AAPL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:20.108814"
+    "fetched_at": "2026-02-26T04:46:34.060897"
   },
   "CRWD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:23.044725"
+    "fetched_at": "2026-02-26T04:46:36.890332"
   },
   "MSFT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-23T23:58:05.786203"
+    "fetched_at": "2026-02-26T03:25:12.893628"
   },
   "NVDA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.195252"
+    "fetched_at": "2026-02-26T04:46:32.149777"
   },
   "AMD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.241468"
+    "fetched_at": "2026-02-26T04:46:29.288024"
   },
   "AMZN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:37.201659"
+    "fetched_at": "2026-02-26T04:46:50.011058"
   },
   "TSLA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:04.426425"
+    "fetched_at": "2026-02-26T04:46:19.648165"
   },
   "JPM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:42.924733"
+    "fetched_at": "2026-02-26T04:46:55.183062"
   },
   "DY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.215542"
+    "fetched_at": "2026-02-26T04:46:43.912779"
   },
   "ABNB": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:16.760533"
+    "fetched_at": "2026-02-26T04:46:30.838771"
   },
   "HQY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:48.664246"
+    "fetched_at": "2026-02-26T04:47:00.779165"
   },
   "RYAN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:22.594077"
+    "fetched_at": "2026-02-26T04:46:36.545871"
   },
   "KFY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.481537"
+    "fetched_at": "2026-02-26T04:46:27.615152"
   },
   "ADBE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:17.219564"
+    "fetched_at": "2026-02-26T04:46:31.220873"
   },
   "MCHP": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-24T00:01:55.744034"
+    "fetched_at": "2026-02-26T03:25:04.025901"
   },
   "ADSK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.103404"
+    "fetched_at": "2026-02-26T04:46:37.629362"
   },
   "PATK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:38.952516"
+    "fetched_at": "2026-02-26T04:46:51.317200"
   },
   "FTDR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.598430"
+    "fetched_at": "2026-02-26T04:46:23.341500"
   },
   "DNOW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:04.264854"
+    "fetched_at": "2026-02-26T04:46:19.505347"
   },
   "GVA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:05.722977"
+    "fetched_at": "2026-02-26T04:46:20.743858"
   },
   "ANDE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.804073"
+    "fetched_at": "2026-02-26T04:46:47.568561"
   },
   "PANW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.966596"
+    "fetched_at": "2026-02-26T04:46:23.666423"
   },
   "SPGI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.580891"
+    "fetched_at": "2026-02-26T04:46:57.981339"
   },
   "BLK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.951024"
+    "fetched_at": "2026-02-26T04:46:24.752293"
   },
   "SIG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:06.441002"
+    "fetched_at": "2026-02-26T04:46:21.326767"
   },
   "CRM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.701169"
+    "fetched_at": "2026-02-26T04:46:44.438243"
   },
   "CENTA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:04.775151"
+    "fetched_at": "2026-02-26T04:46:19.833945"
   },
   "CRS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:04.962570"
+    "fetched_at": "2026-02-26T04:46:20.019347"
   },
   "SLB": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:30.409618"
+    "fetched_at": "2026-02-26T04:46:43.127906"
   },
   "EXAS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:05.114448"
+    "fetched_at": "2026-02-26T04:46:20.158312"
   },
   "TTWO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:22.002706"
+    "fetched_at": "2026-02-26T04:46:35.970921"
   },
   "NOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:36.618854"
+    "fetched_at": "2026-02-26T04:46:49.502950"
   },
   "EOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:32.056424"
+    "fetched_at": "2026-02-26T04:46:44.748542"
   },
   "PYPL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.476022"
+    "fetched_at": "2026-02-26T04:46:24.175124"
   },
   "TRV": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:35.325727"
+    "fetched_at": "2026-02-26T04:46:48.067170"
   },
   "PIPR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:43.083560"
+    "fetched_at": "2026-02-26T04:46:55.400044"
   },
   "UNH": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:20.819238"
+    "fetched_at": "2026-02-26T04:46:34.804525"
   },
   "NEE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:05.294198"
+    "fetched_at": "2026-02-26T04:46:20.346752"
   },
   "MO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.787721"
+    "fetched_at": "2026-02-26T04:46:27.912492"
   },
   "DUK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:06.090757"
+    "fetched_at": "2026-02-26T04:46:20.954859"
   },
   "ABBV": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:26.033597"
+    "fetched_at": "2026-02-26T04:46:39.468894"
   },
   "GNTX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:41.350504"
+    "fetched_at": "2026-02-26T04:46:53.584707"
   },
   "ZS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:06.592486"
+    "fetched_at": "2026-02-26T04:46:21.511371"
   },
   "JNJ": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:10.331412"
+    "fetched_at": "2026-02-26T04:46:25.022319"
   },
   "ALKT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:27.706918"
+    "fetched_at": "2026-02-26T04:46:40.927769"
   },
   "DDOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:06.737142"
+    "fetched_at": "2026-02-26T04:46:21.640017"
   },
   "TENB": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:07.331168"
+    "fetched_at": "2026-02-26T04:46:22.125728"
   },
   "USLM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.624777"
+    "fetched_at": "2026-02-26T04:46:24.434618"
   },
   "KRG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:10.677162"
+    "fetched_at": "2026-02-26T04:46:25.392026"
   },
   "PECO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:12.519372"
+    "fetched_at": "2026-02-26T04:46:26.677651"
   },
   "MPC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.017732"
+    "fetched_at": "2026-02-26T04:46:43.667851"
   },
   "TILE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:06.899651"
+    "fetched_at": "2026-02-26T04:46:21.823104"
   },
   "NSIT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:33.886134"
+    "fetched_at": "2026-02-26T04:46:46.556668"
   },
   "ASGN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:16.229903"
+    "fetched_at": "2026-02-26T04:46:30.360635"
   },
   "PM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:16.382997"
+    "fetched_at": "2026-02-26T04:46:30.502376"
   },
   "CAT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:44.787368"
+    "fetched_at": "2026-02-26T04:46:56.999291"
   },
   "GATX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:39.715517"
+    "fetched_at": "2026-02-26T04:46:51.781753"
   },
   "MUSA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.103247"
+    "fetched_at": "2026-02-26T04:46:22.816994"
   },
   "BCC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.111478"
+    "fetched_at": "2026-02-26T04:46:23.823714"
   },
   "INTU": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.744002"
+    "fetched_at": "2026-02-26T04:46:38.379495"
   },
   "HNI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:07.117028"
+    "fetched_at": "2026-02-26T04:46:21.976263"
   },
   "MATX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:17.549489"
+    "fetched_at": "2026-02-26T04:46:31.579508"
   },
   "IDXX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:23.586311"
+    "fetched_at": "2026-02-26T04:46:37.309505"
   },
   "QCOM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.522546"
+    "fetched_at": "2026-02-26T04:46:29.733141"
   },
   "MLI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:07.541974"
+    "fetched_at": "2026-02-26T04:46:22.370047"
   },
   "HWKN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:19.940809"
+    "fetched_at": "2026-02-26T04:46:33.896444"
   },
   "MRVL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.842585"
+    "fetched_at": "2026-02-26T04:46:30.035123"
   },
   "ILMN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:07.806308"
+    "fetched_at": "2026-02-26T04:46:22.514138"
   },
   "NPO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:07.955335"
+    "fetched_at": "2026-02-26T04:46:22.676343"
   },
   "MRK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:32.879958"
+    "fetched_at": "2026-02-26T04:46:45.737502"
   },
   "MMM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.256822"
+    "fetched_at": "2026-02-26T04:46:22.977276"
   },
   "ATKR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.454500"
+    "fetched_at": "2026-02-26T04:46:23.188316"
   },
   "VLO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.542295"
+    "fetched_at": "2026-02-26T04:46:44.239269"
   },
   "UFPI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:08.764489"
+    "fetched_at": "2026-02-26T04:46:23.516368"
   },
   "LULU": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.258378"
+    "fetched_at": "2026-02-26T04:46:23.986951"
   },
   "PLAB": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:09.799329"
+    "fetched_at": "2026-02-26T04:46:24.610933"
   },
   "MELI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:10.500654"
+    "fetched_at": "2026-02-26T04:46:25.209709"
   },
   "DE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:10.185279"
+    "fetched_at": "2026-02-26T04:46:24.886054"
   },
   "SHOO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:25.454054"
+    "fetched_at": "2026-02-26T04:46:38.957415"
   },
   "MAR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:29.515188"
+    "fetched_at": "2026-02-26T04:46:42.528340"
   },
   "PSX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:29.959749"
+    "fetched_at": "2026-02-26T04:46:42.814912"
   },
   "WDAY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.265717"
+    "fetched_at": "2026-02-26T04:46:27.309035"
   },
   "UPS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:14.690666"
+    "fetched_at": "2026-02-26T04:46:28.782832"
   },
   "CXT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:10.972809"
+    "fetched_at": "2026-02-26T04:46:25.526439"
   },
   "OMCL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:11.153482"
+    "fetched_at": "2026-02-26T04:46:25.681214"
   },
   "AEIS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:11.632061"
+    "fetched_at": "2026-02-26T04:46:25.884814"
   },
   "CADE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:12.338073"
+    "fetched_at": "2026-02-26T04:46:26.508999"
   },
   "ADTN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:11.853194"
+    "fetched_at": "2026-02-26T04:46:26.085210"
   },
   "MRNA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:12.082732"
+    "fetched_at": "2026-02-26T04:46:26.256856"
   },
   "GFF": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:12.756479"
+    "fetched_at": "2026-02-26T04:46:26.860321"
   },
   "GM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:43.432019"
+    "fetched_at": "2026-02-26T04:46:55.730885"
   },
   "AIT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.290101"
+    "fetched_at": "2026-02-26T04:46:46.960909"
   },
   "NFLX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:12.926197"
+    "fetched_at": "2026-02-26T04:46:27.001568"
   },
   "QQQ": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:49.502629"
+    "fetched_at": "2026-02-26T04:47:01.281595"
   },
   "MNDY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.103611"
+    "fetched_at": "2026-02-26T04:46:27.153599"
   },
   "ISRG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:35.773626"
+    "fetched_at": "2026-02-26T04:46:48.473610"
   },
   "MTX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.118332"
+    "fetched_at": "2026-02-26T04:46:57.355076"
   },
   "DIS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.623605"
+    "fetched_at": "2026-02-26T04:46:27.762562"
   },
   "ICFI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.973581"
+    "fetched_at": "2026-02-26T04:46:47.740665"
   },
   "FELE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:23.419773"
+    "fetched_at": "2026-02-26T04:46:37.166963"
   },
   "PFE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:13.954236"
+    "fetched_at": "2026-02-26T04:46:28.058581"
   },
   "RBC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:14.104520"
+    "fetched_at": "2026-02-26T04:46:28.263560"
   },
   "JD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:14.245162"
+    "fetched_at": "2026-02-26T04:46:28.439090"
   },
   "SANM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:14.516989"
+    "fetched_at": "2026-02-26T04:46:28.616090"
   },
   "CHTR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:14.928655"
+    "fetched_at": "2026-02-26T04:46:28.998494"
   },
   "DASH": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.085917"
+    "fetched_at": "2026-02-26T04:46:29.145949"
   },
   "IWM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.268314"
+    "fetched_at": "2026-02-26T04:46:57.556503"
   },
   "KLAC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.378727"
+    "fetched_at": "2026-02-26T04:46:29.479271"
   },
   "ACN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:21.234987"
+    "fetched_at": "2026-02-26T04:46:35.102919"
   },
   "MPWR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:15.682424"
+    "fetched_at": "2026-02-26T04:46:29.890494"
   },
   "AMAT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:16.046432"
+    "fetched_at": "2026-02-26T04:46:30.189006"
   },
   "PRIM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:16.556339"
+    "fetched_at": "2026-02-26T04:46:30.676808"
   },
   "QRVO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.008152"
+    "fetched_at": "2026-02-26T04:46:41.231012"
   },
   "AFRM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:17.053984"
+    "fetched_at": "2026-02-26T04:46:31.057234"
   },
   "CSCO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:32.285683"
+    "fetched_at": "2026-02-26T04:46:45.000152"
   },
   "KTOS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:17.384836"
+    "fetched_at": "2026-02-26T04:46:31.384052"
   },
   "ALGN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:17.765867"
+    "fetched_at": "2026-02-26T04:46:31.735883"
   },
   "SXI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.035386"
+    "fetched_at": "2026-02-26T04:46:31.885925"
   },
   "AXP": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:36.851768"
+    "fetched_at": "2026-02-26T04:46:49.681239"
   },
   "FAST": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.906871"
+    "fetched_at": "2026-02-26T04:46:38.504095"
   },
   "DXCM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:29.360954"
+    "fetched_at": "2026-02-26T04:46:42.381479"
   },
   "TEAM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.363998"
+    "fetched_at": "2026-02-26T04:46:32.307997"
   },
   "SKYW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.572491"
+    "fetched_at": "2026-02-26T04:46:32.459416"
   },
   "EBAY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:52.774843"
+    "fetched_at": "2026-02-26T04:47:04.340844"
   },
   "CNS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:21.039795"
+    "fetched_at": "2026-02-26T04:46:34.951804"
   },
   "BMY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:25.282567"
+    "fetched_at": "2026-02-26T04:46:38.789273"
   },
   "QTWO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.790933"
+    "fetched_at": "2026-02-26T04:46:32.695293"
   },
   "SHW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:30.797905"
+    "fetched_at": "2026-02-26T04:46:43.441916"
   },
   "TGT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:18.956979"
+    "fetched_at": "2026-02-26T04:46:32.870063"
   },
   "SKY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:19.116251"
+    "fetched_at": "2026-02-26T04:46:33.027630"
   },
   "DOW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:30.188818"
+    "fetched_at": "2026-02-26T04:46:42.970040"
   },
   "ADP": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:19.338432"
+    "fetched_at": "2026-02-26T04:46:33.198773"
   },
   "PAYX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:19.762341"
+    "fetched_at": "2026-02-26T04:46:33.732796"
   },
   "WWD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:35.947448"
+    "fetched_at": "2026-02-26T04:46:48.698995"
   },
   "ASTE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:19.562800"
+    "fetched_at": "2026-02-26T04:46:33.431866"
   },
   "DD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:38.025995"
+    "fetched_at": "2026-02-26T04:46:50.627922"
   },
   "APOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.070249"
+    "fetched_at": "2026-02-26T04:46:46.781110"
   },
   "GOOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:20.268237"
+    "fetched_at": "2026-02-26T04:46:34.209263"
   },
   "GOOGL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:20.422092"
+    "fetched_at": "2026-02-26T04:46:34.358739"
   },
   "MU": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:20.564836"
+    "fetched_at": "2026-02-26T04:46:34.485430"
   },
   "WFC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:21.567634"
+    "fetched_at": "2026-02-26T04:46:35.407313"
   },
   "NHC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:21.390639"
+    "fetched_at": "2026-02-26T04:46:35.247056"
   },
   "NEOG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:21.829307"
+    "fetched_at": "2026-02-26T04:46:35.768534"
   },
   "PAYO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:22.218077"
+    "fetched_at": "2026-02-26T04:46:36.137588"
   },
   "HELE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:22.386595"
+    "fetched_at": "2026-02-26T04:46:36.310983"
   },
   "BOOT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:22.789308"
+    "fetched_at": "2026-02-26T04:46:36.727129"
   },
   "ORCL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:23.213825"
+    "fetched_at": "2026-02-26T04:46:37.037589"
   },
   "BRK_B": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.416493"
+    "fetched_at": "2026-02-26T04:46:57.713444"
   },
   "GTES": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:44.585349"
+    "fetched_at": "2026-02-26T04:46:56.806773"
   },
   "KHC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:33.461477"
+    "fetched_at": "2026-02-26T04:46:46.197066"
   },
   "LOW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:25.603713"
+    "fetched_at": "2026-02-26T04:46:39.098038"
   },
   "ABG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:23.845665"
+    "fetched_at": "2026-02-26T04:46:37.469549"
   },
   "ROST": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.250990"
+    "fetched_at": "2026-02-26T04:46:37.865461"
   },
   "HURN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.391795"
+    "fetched_at": "2026-02-26T04:46:38.011640"
   },
   "PCAR": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:24.584999"
+    "fetched_at": "2026-02-26T04:46:38.181266"
   },
   "CARG": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:25.111773"
+    "fetched_at": "2026-02-26T04:46:38.639002"
   },
   "GE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:37.432374"
+    "fetched_at": "2026-02-26T04:46:50.182676"
   },
   "RTX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.911296"
+    "fetched_at": "2026-02-26T04:46:58.299235"
   },
   "LUMN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:25.838002"
+    "fetched_at": "2026-02-26T04:46:39.296667"
   },
   "CPRT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:26.792705"
+    "fetched_at": "2026-02-26T04:46:40.189582"
   },
   "CSX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:26.231587"
+    "fetched_at": "2026-02-26T04:46:39.606156"
   },
   "CSGS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:26.406218"
+    "fetched_at": "2026-02-26T04:46:39.828287"
   },
   "FIVE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:26.603305"
+    "fetched_at": "2026-02-26T04:46:40.055482"
   },
   "PDD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:27.039309"
+    "fetched_at": "2026-02-26T04:46:40.453075"
   },
   "POWL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:27.246048"
+    "fetched_at": "2026-02-26T04:46:40.638573"
   },
   "CTAS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:46.664433"
+    "fetched_at": "2026-02-26T04:46:58.889958"
   },
   "F": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:27.553001"
+    "fetched_at": "2026-02-26T04:46:40.778683"
   },
   "MCD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:27.857435"
+    "fetched_at": "2026-02-26T04:46:41.079300"
   },
   "CI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.924007"
+    "fetched_at": "2026-02-26T04:46:42.037455"
   },
   "CTSH": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.309436"
+    "fetched_at": "2026-02-26T04:46:41.386083"
   },
   "NOW": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.458577"
+    "fetched_at": "2026-02-26T04:46:41.575014"
   },
   "FN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.596476"
+    "fetched_at": "2026-02-26T04:46:41.740970"
   },
   "BBWI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:28.771110"
+    "fetched_at": "2026-02-26T04:46:41.900273"
   },
   "ORLY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:29.093358"
+    "fetched_at": "2026-02-26T04:46:42.224886"
   },
   "DV": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:29.778010"
+    "fetched_at": "2026-02-26T04:46:42.657719"
   },
   "RUN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:30.580575"
+    "fetched_at": "2026-02-26T04:46:43.273752"
   },
   "BA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:47.062681"
+    "fetched_at": "2026-02-26T04:46:59.279143"
   },
   "ANF": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.379851"
+    "fetched_at": "2026-02-26T04:46:44.054220"
   },
   "ESNT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:31.868639"
+    "fetched_at": "2026-02-26T04:46:44.585540"
   },
   "BJ": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:39.306595"
+    "fetched_at": "2026-02-26T04:46:51.599170"
   },
   "LPX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:47.721810"
+    "fetched_at": "2026-02-26T04:46:59.795076"
   },
   "RMBS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:32.430779"
+    "fetched_at": "2026-02-26T04:46:45.291633"
   },
   "PCVX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:32.728435"
+    "fetched_at": "2026-02-26T04:46:45.546963"
   },
   "DUOL": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:41.503170"
+    "fetched_at": "2026-02-26T04:46:53.774697"
   },
   "T": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:33.054582"
+    "fetched_at": "2026-02-26T04:46:45.908317"
   },
   "MDLZ": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:33.254749"
+    "fetched_at": "2026-02-26T04:46:46.050485"
   },
   "KVUE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:33.689787"
+    "fetched_at": "2026-02-26T04:46:46.345230"
   },
   "XOM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.429334"
+    "fetched_at": "2026-02-26T04:46:47.114490"
   },
   "WTS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:34.599992"
+    "fetched_at": "2026-02-26T04:46:47.328043"
   },
   "ASML": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:35.548797"
+    "fetched_at": "2026-02-26T04:46:48.287847"
   },
   "ZM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:35.148127"
+    "fetched_at": "2026-02-26T04:46:47.895013"
   },
   "HON": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:43.267906"
+    "fetched_at": "2026-02-26T04:46:55.534807"
   },
   "EXLS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:36.231510"
+    "fetched_at": "2026-02-26T04:46:49.004081"
   },
   "VRSK": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:36.460499"
+    "fetched_at": "2026-02-26T04:46:49.165974"
   },
   "IBM": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:53.362856"
+    "fetched_at": "2026-02-26T04:47:05.067332"
   },
   "GS": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:37.039331"
+    "fetched_at": "2026-02-26T04:46:49.818847"
   },
   "CBT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:37.596121"
+    "fetched_at": "2026-02-26T04:46:50.336718"
   },
   "AMGN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:45.733643"
+    "fetched_at": "2026-02-26T04:46:58.125270"
   },
   "DIA": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:46.309946"
+    "fetched_at": "2026-02-26T04:46:58.623632"
   },
   "CELH": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:38.292295"
+    "fetched_at": "2026-02-26T04:46:50.803606"
   },
   "C": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:38.738823"
+    "fetched_at": "2026-02-26T04:46:51.154024"
   },
   "LMT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:42.182060"
+    "fetched_at": "2026-02-26T04:46:54.398756"
   },
   "CVX": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:39.863439"
+    "fetched_at": "2026-02-26T04:46:51.934654"
   },
   "COP": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:39.997455"
+    "fetched_at": "2026-02-26T04:46:52.119052"
   },
   "OXY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:40.159088"
+    "fetched_at": "2026-02-26T04:46:52.285304"
   },
   "AIN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:40.337866"
+    "fetched_at": "2026-02-26T04:46:52.424431"
   },
   "SMCI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:40.869728"
+    "fetched_at": "2026-02-26T04:46:52.964646"
   },
   "KAI": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:40.687123"
+    "fetched_at": "2026-02-26T04:46:52.784683"
   },
   "MOD": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:41.052814"
+    "fetched_at": "2026-02-26T04:46:53.136327"
   },
   "CORT": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:41.842760"
+    "fetched_at": "2026-02-26T04:46:54.060601"
   },
   "LECO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:42.017283"
+    "fetched_at": "2026-02-26T04:46:54.226134"
   },
   "HLNE": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:42.753477"
+    "fetched_at": "2026-02-26T04:46:54.991504"
   },
   "TRN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:42.540680"
+    "fetched_at": "2026-02-26T04:46:54.831780"
   },
   "OGN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:43.727279"
+    "fetched_at": "2026-02-26T04:46:56.042562"
   },
   "SLGN": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:44.941907"
+    "fetched_at": "2026-02-26T04:46:57.187847"
   },
   "KO": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:48.450619"
+    "fetched_at": "2026-02-26T04:47:00.588077"
   },
   "BAC": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:48.238014"
+    "fetched_at": "2026-02-26T04:47:00.424982"
   },
   "SPY": {
     "score": 0.0,
     "n_articles": 0,
-    "fetched_at": "2026-02-26T01:34:49.670619"
+    "fetched_at": "2026-02-26T04:47:01.439857"
+  },
+  "CMCSA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.034135"
+  },
+  "SFNC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.277297"
+  },
+  "CWEN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.510821"
+  },
+  "NKE": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.650323"
+  },
+  "OKTA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.808207"
+  },
+  "VSEC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:02.943651"
+  },
+  "AMT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:03.097575"
+  },
+  "SNPS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:03.282079"
+  },
+  "LRCX": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:03.440158"
+  },
+  "NTES": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:03.613108"
+  },
+  "INTC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:03.809617"
+  },
+  "CDNS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.198412"
+  },
+  "LLY": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.326687"
+  },
+  "META": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.482807"
+  },
+  "AVGO": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.633861"
+  },
+  "ON": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.782299"
+  },
+  "FORM": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:04.939642"
+  },
+  "HCC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:05.145043"
+  },
+  "BKNG": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:05.316695"
+  },
+  "TJX": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:05.550063"
+  },
+  "AAON": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:05.710114"
+  },
+  "CVCO": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:05.848329"
+  },
+  "PLUS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:06.066354"
+  },
+  "SWKS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:06.341492"
+  },
+  "ROP": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:06.543857"
+  },
+  "HD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:06.734348"
+  },
+  "V": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:06.949205"
+  },
+  "VRTX": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:07.123698"
+  },
+  "SBUX": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:07.416276"
+  },
+  "EA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:07.629047"
+  },
+  "FTNT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:07.784981"
+  },
+  "DLTR": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:07.972006"
+  },
+  "CVS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:08.130590"
+  },
+  "ABT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:08.287747"
+  },
+  "AMWD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:08.500821"
+  },
+  "AGM": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:08.638217"
+  },
+  "MA": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:08.807918"
+  },
+  "ODFL": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.039847"
+  },
+  "APD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.208028"
+  },
+  "CASY": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.364659"
+  },
+  "UNP": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.531997"
+  },
+  "GILD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.710481"
+  },
+  "LIN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:09.944530"
+  },
+  "CHE": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.097123"
+  },
+  "SYK": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.299104"
+  },
+  "BIIB": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.469505"
+  },
+  "IBKR": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.641177"
+  },
+  "ICLR": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.790664"
+  },
+  "ECL": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:10.960874"
+  },
+  "PG": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:11.112629"
+  },
+  "PLD": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:11.388107"
+  },
+  "BIDU": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:11.560845"
+  },
+  "CVLT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:11.710318"
+  },
+  "MS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:11.872765"
+  },
+  "NXPI": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:12.035225"
+  },
+  "BMI": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:12.230886"
+  },
+  "LSTR": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:12.473407"
+  },
+  "ENSG": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.064907"
+  },
+  "TMUS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.245321"
+  },
+  "TMO": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.430407"
+  },
+  "PEP": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.579415"
+  },
+  "IESC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.762665"
+  },
+  "DHR": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:13.907768"
+  },
+  "ZTS": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:14.100955"
+  },
+  "REGN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:14.251248"
+  },
+  "CALM": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:14.453839"
+  },
+  "TXN": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:14.647301"
+  },
+  "CRVL": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:14.864138"
+  },
+  "COST": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:15.180922"
+  },
+  "WMT": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:15.345692"
+  },
+  "ADI": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:15.636700"
+  },
+  "BSX": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:15.807278"
+  },
+  "BCPC": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:15.970133"
+  },
+  "EXPO": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:16.269863"
+  },
+  "VZ": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:16.512685"
+  },
+  "SO": {
+    "score": 0.0,
+    "n_articles": 0,
+    "fetched_at": "2026-02-26T03:25:16.945178"
   }
 }
