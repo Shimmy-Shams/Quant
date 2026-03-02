@@ -352,6 +352,10 @@ def build_executor(
     Returns:
         Configured AlpacaExecutor.
     """
+    # Read slippage cap from config (lives under alpaca section, not backtest)
+    from strategy_config import get_config
+    slippage = get_config().get('alpaca.max_slippage_pct', 0.005)
+
     return AlpacaExecutor(
         connection=conn,
         commission_pct=0.0 if mode == TradingMode.LIVE else bt_config.commission_pct,
@@ -359,6 +363,7 @@ def build_executor(
         max_total_exposure=bt_config.max_total_exposure,
         stop_loss_pct=getattr(bt_config, "stop_loss_pct", None),
         take_profit_pct=getattr(bt_config, "take_profit_pct", None),
+        max_slippage_pct=float(slippage) if slippage else 0.0,
     )
 
 

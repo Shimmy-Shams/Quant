@@ -342,6 +342,7 @@ alpaca:
 
   # Execution
   default_mode: "shadow"        # 'shadow', 'live', or 'replay'
+  max_slippage_pct: 0.005       # 0.5% — limit orders cap adverse fills (0 = use market orders)
 
   # Simulation (replay mode)
   replay_years: 5               # Years of history to replay

@@ -71,6 +71,7 @@ class AlpacaExecutor:
         max_total_exposure: float = 1.0,
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
+        max_slippage_pct: float = 0.005,
     ):
         """
         Args:
@@ -80,6 +81,7 @@ class AlpacaExecutor:
             max_total_exposure: Max % of portfolio in positions
             stop_loss_pct: If set, attach server-side stop-loss via bracket order
             take_profit_pct: If set, attach server-side take-profit via bracket order
+            max_slippage_pct: Cap on adverse fill vs reference price (0 = market orders)
         """
         self.connection = connection
         self.commission_pct = commission_pct
@@ -87,6 +89,7 @@ class AlpacaExecutor:
         self.max_total_exposure = max_total_exposure
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
+        self.max_slippage_pct = max_slippage_pct
 
     def execute_decisions(
         self,
@@ -142,6 +145,61 @@ class AlpacaExecutor:
 
         return results
 
+    def _compute_limit_price(
+        self,
+        reference_price: float,
+        action: str,
+    ) -> Optional[float]:
+        """Compute a slippage-capped limit price for the given action.
+
+        Returns None if max_slippage_pct is 0 (→ use market order instead).
+
+        For buys/covers (we are buying): limit = price * (1 + slippage)
+        For sells/shorts (we are selling): limit = price * (1 - slippage)
+        """
+        if self.max_slippage_pct <= 0 or reference_price <= 0:
+            return None
+
+        if action in ('buy', 'cover'):
+            return round(reference_price * (1 + self.max_slippage_pct), 2)
+        else:  # sell, short
+            return round(reference_price * (1 - self.max_slippage_pct), 2)
+
+    def _poll_fill_price(
+        self,
+        order_id: str,
+        symbol: str,
+        fallback_price: float,
+        max_wait_sec: float = 30.0,
+        poll_interval: float = 1.0,
+    ) -> Tuple[Optional[float], str]:
+        """Poll Alpaca for actual fill price on any order.
+
+        Returns (filled_price, final_status).
+        If polling times out, returns (None, last_status).
+        """
+        if self.connection.config.trading_mode != TradingMode.LIVE:
+            return fallback_price, 'simulated'
+
+        deadline = time.time() + max_wait_sec
+        last_status = 'unknown'
+
+        while time.time() < deadline:
+            order_info = self.connection.get_order_by_id(order_id)
+            if order_info:
+                last_status = order_info.get('status', 'unknown')
+                if last_status == 'filled':
+                    fp = order_info.get('filled_avg_price')
+                    if fp:
+                        return float(fp), 'filled'
+            time.sleep(poll_interval)
+
+        logger.warning(
+            f"⏱️ {symbol} fill not confirmed in {max_wait_sec}s "
+            f"(last status: {last_status}), using fallback ${fallback_price:.2f}"
+        )
+        return None, last_status
+
     def _execute_single(
         self,
         decision: TradeDecision,
@@ -149,13 +207,14 @@ class AlpacaExecutor:
     ) -> TradeResult:
         """Execute a single trade decision.
 
+        Uses limit orders (with slippage cap) instead of market orders to
+        protect against adverse fills, especially at market open.  If
+        max_slippage_pct is 0, falls back to plain market orders.
+
         For entries with stop_loss_pct configured:
-          1. Submit a plain market order
+          1. Submit a limit (or market) order
           2. Poll until filled (up to ~30s)
           3. Submit a standalone GTC stop order at the computed SL price
-
-        This replaces the old bracket-order approach so stops are clearly
-        visible as independent orders in Alpaca's UI.
         """
         try:
             if decision.target_qty <= 0:
@@ -183,16 +242,33 @@ class AlpacaExecutor:
                     # the exit order to avoid "insufficient qty" errors.
                     time.sleep(1.5)
 
-            # ── Submit market order (entries and exits alike) ──
-            order = self.connection.submit_market_order(
-                symbol=decision.symbol,
-                qty=decision.target_qty,
-                side=decision.side,
-            )
+            # ── Compute limit price for slippage protection ──
+            limit_price = self._compute_limit_price(price, decision.action)
+
+            if limit_price is not None and price > 0:
+                # ── Submit limit order with slippage cap ──
+                order = self.connection.submit_limit_order(
+                    symbol=decision.symbol,
+                    qty=decision.target_qty,
+                    side=decision.side,
+                    limit_price=limit_price,
+                    time_in_force='day',
+                )
+                logger.info(
+                    f"📋 Limit order: {decision.action.upper()} {decision.target_qty} "
+                    f"{decision.symbol} limit=${limit_price:.2f} "
+                    f"(ref=${price:.2f}, slip={self.max_slippage_pct:.2%})"
+                )
+            else:
+                # ── Fallback: market order (slippage cap disabled or price=0) ──
+                order = self.connection.submit_market_order(
+                    symbol=decision.symbol,
+                    qty=decision.target_qty,
+                    side=decision.side,
+                )
 
             order_id = order['id']
             order_status = order['status']
-            filled_price = order.get('filled_avg_price') or price
 
             # ── For entries: attach a standalone stop-loss after fill ──
             if is_entry and self.stop_loss_pct is not None and price > 0:
@@ -203,6 +279,15 @@ class AlpacaExecutor:
                     action=decision.action,
                     estimated_price=price,
                 )
+            else:
+                # Poll for real fill price on exits too (fixes stale price recording)
+                polled, _ = self._poll_fill_price(
+                    order_id=order_id,
+                    symbol=decision.symbol,
+                    fallback_price=price,
+                    max_wait_sec=15.0,
+                )
+                filled_price = polled if polled else (order.get('filled_avg_price') or price)
 
             # Estimate commission
             commission = (filled_price or price) * decision.target_qty * self.commission_pct
@@ -239,8 +324,6 @@ class AlpacaExecutor:
 
         Returns the actual filled price (or estimated if polling times out).
         """
-        import time as _time
-
         if self.connection.config.trading_mode != TradingMode.LIVE:
             # Shadow/replay — compute and log the stop but don't submit
             from execution.intraday_monitor import IntradayMonitor
@@ -257,26 +340,18 @@ class AlpacaExecutor:
             )
             return estimated_price
 
-        # ── Poll for fill ──────────────────────────────────────────
-        filled_price = None
-        deadline = _time.time() + max_wait_sec
+        # ── Poll for fill (reuse shared helper) ───────────────────
+        filled_price, fill_status = self._poll_fill_price(
+            order_id=order_id,
+            symbol=symbol,
+            fallback_price=estimated_price,
+            max_wait_sec=max_wait_sec,
+            poll_interval=poll_interval,
+        )
 
-        while _time.time() < deadline:
-            order_info = self.connection.get_order_by_id(order_id)
-            if order_info and order_info.get('status') == 'filled':
-                filled_price = order_info.get('filled_avg_price') or estimated_price
-                logger.info(
-                    f"✅ {symbol} entry filled @ ${filled_price:.2f}"
-                )
-                break
-            _time.sleep(poll_interval)
-
-        if filled_price is None:
-            # Timed out — use estimated price; stop will still be placed
-            logger.warning(
-                f"⏱️ {symbol} fill not confirmed in {max_wait_sec}s, "
-                f"placing stop using estimated price ${estimated_price:.2f}"
-            )
+        if filled_price is not None:
+            logger.info(f"✅ {symbol} entry filled @ ${filled_price:.2f}")
+        else:
             filled_price = estimated_price
 
         # ── Compute stop-loss price ────────────────────────────────
