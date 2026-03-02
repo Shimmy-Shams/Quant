@@ -7,6 +7,7 @@ Respects trading mode (live/shadow/replay).
 """
 
 import logging
+import time
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -176,6 +177,10 @@ class AlpacaExecutor:
                         f"🗑️ Cancelled {cancelled} open order(s) for "
                         f"{decision.symbol} before exit"
                     )
+                    # Alpaca cancel is async — shares stay "held_for_orders"
+                    # until the cancel fully settles. Wait before submitting
+                    # the exit order to avoid "insufficient qty" errors.
+                    time.sleep(1.5)
 
             # ── Submit market order (entries and exits alike) ──
             order = self.connection.submit_market_order(
@@ -338,7 +343,10 @@ class AlpacaExecutor:
             position_value = price * decision.target_qty
             position_pct = position_value / equity
 
-            if position_pct > self.max_position_pct:
+            # Use 1% buffer to avoid floating-point edge cases where
+            # the position sizer targets exactly max_position_pct but live
+            # prices shift the ratio by fractions of a percent.
+            if position_pct > self.max_position_pct * 1.01:
                 logger.warning(
                     f"Risk check failed for {decision.symbol}: "
                     f"position {position_pct:.1%} > limit {self.max_position_pct:.1%}"
