@@ -131,7 +131,8 @@ class AlpacaExecutor:
             results.append(result)
 
         # Log summary
-        filled = sum(1 for r in results if r.status in ('filled', 'submitted', 'simulated'))
+        _OK = ('filled', 'submitted', 'pending_new', 'accepted', 'simulated')
+        filled = sum(1 for r in results if r.status in _OK)
         rejected = sum(1 for r in results if r.status == 'rejected')
         errors = sum(1 for r in results if r.status == 'error')
         logger.info(

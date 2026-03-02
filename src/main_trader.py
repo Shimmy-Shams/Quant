@@ -345,10 +345,11 @@ def run_daily_cycle(
         if decisions:
             current_prices = price_df.iloc[-1]
             results = executor.execute_decisions(decisions, current_prices)
-            filled = sum(1 for r in results if r.status in ("filled", "submitted"))
+            _OK_STATUSES = ("filled", "submitted", "pending_new", "accepted")
+            filled = sum(1 for r in results if r.status in _OK_STATUSES)
             logger.info(f"Executed {len(decisions)} decisions → {filled} filled")
             for r in results:
-                icon = "✅" if r.status in ("filled", "submitted") else "❌"
+                icon = "✅" if r.status in _OK_STATUSES else "❌"
                 logger.info(f"  {icon} {r.decision.symbol} {r.decision.action} "
                             f"x{r.decision.target_qty} → {r.status}")
             result["decisions"] = len(decisions)
@@ -908,11 +909,12 @@ def run_trade_execution_phase(
         if decisions:
             current_prices = price_df.iloc[-1]
             results = executor.execute_decisions(decisions, current_prices)
-            filled = sum(1 for r in results if r.status in ("filled", "submitted"))
+            _OK_STATUSES = ("filled", "submitted", "pending_new", "accepted")
+            filled = sum(1 for r in results if r.status in _OK_STATUSES)
             logger.info(f"Executed {len(decisions)} decisions -> {filled} filled")
             decisions_data = []
             for r in results:
-                status_ok = r.status in ("filled", "submitted")
+                status_ok = r.status in _OK_STATUSES
                 logger.info(
                     f"  {'OK' if status_ok else 'FAIL'} {r.decision.symbol} {r.decision.action} "
                     f"x{r.decision.target_qty} -> {r.status}"
@@ -1098,20 +1100,105 @@ def _save_live_state(conn: AlpacaConnection) -> None:
                 "unrealized_plpc": float(pos["unrealized_plpc"]) * 100,
             })
         
-        # Get recent filled orders (last 50)
+        # Get recent filled orders (last 50) with entry/exit classification
         trades = []
         try:
             closed_orders = conn.get_orders(status='closed', limit=50)
+
+            # Build a map of entry orders per symbol to pair with exits
+            # Entry = buy (for long) or sell (for short, i.e. short-sell)
+            # Exit  = sell (closing long) or buy (covering short)
+            # We classify using order_type: 'market' entries vs 'stop'/'limit' exits
+            entries_by_symbol: Dict[str, list] = {}
+            exit_orders = []
+
             for order in closed_orders:
-                if order['status'] == 'filled' and order['filled_avg_price']:
-                    trades.append({
-                        "symbol": order["symbol"],
-                        "side": order["side"],
-                        "qty": float(order["qty"]) if order["qty"] else 0,
-                        "filled_price": float(order["filled_avg_price"]),
-                        "submitted_at": order["submitted_at"],
-                        "order_id": order["id"],
-                    })
+                if order['status'] != 'filled' or not order.get('filled_avg_price'):
+                    continue
+                otype = order.get('type', 'market')  # market, stop, limit, etc.
+                side = order['side']  # buy or sell
+                sym = order['symbol']
+                filled_price = float(order['filled_avg_price'])
+                qty = float(order['qty']) if order['qty'] else 0
+                submitted = order.get('submitted_at', '')
+
+                trade_info = {
+                    "symbol": sym,
+                    "side": side,
+                    "qty": qty,
+                    "filled_price": filled_price,
+                    "submitted_at": submitted,
+                    "order_id": order['id'],
+                    "order_type": otype,
+                }
+
+                # Stop orders are always exits (stop-loss protection)
+                if otype == 'stop':
+                    trade_info["trade_type"] = "exit"
+                    exit_orders.append(trade_info)
+                else:
+                    # For market orders: if there's a matching position entry,
+                    # the first order for a symbol is an entry, subsequent
+                    # same-direction orders are adds, opposite-direction are exits
+                    entries_by_symbol.setdefault(sym, []).append(trade_info)
+
+            # Pair entries and exits: for each symbol, orders form
+            # entry→exit chains. In our T+1 system, entries and exits
+            # alternate.  Walk orders chronologically per symbol.
+            for sym, orders in entries_by_symbol.items():
+                orders.sort(key=lambda o: o['submitted_at'])
+                net_qty = 0.0  # positive = long, negative = short
+                entry_price = 0.0
+                for o in orders:
+                    side = o['side']
+                    qty = o['qty']
+                    price = o['filled_price']
+
+                    if net_qty == 0:
+                        # New position entry
+                        o['trade_type'] = 'entry'
+                        entry_price = price
+                        net_qty = qty if side == 'buy' else -qty
+                    elif (net_qty > 0 and side == 'sell') or (net_qty < 0 and side == 'buy'):
+                        # Closing / reducing position = exit
+                        o['trade_type'] = 'exit'
+                        o['entry_price'] = entry_price
+                        if entry_price > 0:
+                            if net_qty > 0:  # was long
+                                o['pnl_pct'] = round((price - entry_price) / entry_price * 100, 2)
+                            else:  # was short
+                                o['pnl_pct'] = round((entry_price - price) / entry_price * 100, 2)
+                        net_qty = 0
+                        entry_price = 0.0
+                    else:
+                        # Adding to position
+                        o['trade_type'] = 'entry'
+                        # Update average entry
+                        total_qty = abs(net_qty) + qty
+                        entry_price = (entry_price * abs(net_qty) + price * qty) / total_qty if total_qty > 0 else price
+                        net_qty = net_qty + qty if side == 'buy' else net_qty - qty
+
+                trades.extend(orders)
+
+            # Add stop-loss exit orders (pair with most recent entry for same symbol)
+            for ex in exit_orders:
+                sym = ex['symbol']
+                # Find the most recent entry for this symbol
+                matching_entries = [t for t in trades if t['symbol'] == sym and t.get('trade_type') == 'entry']
+                if matching_entries:
+                    last_entry = matching_entries[-1]
+                    ex['entry_price'] = last_entry['filled_price']
+                    ep = last_entry['filled_price']
+                    if ep > 0:
+                        if last_entry['side'] == 'buy':  # was long
+                            ex['pnl_pct'] = round((ex['filled_price'] - ep) / ep * 100, 2)
+                        else:  # was short
+                            ex['pnl_pct'] = round((ep - ex['filled_price']) / ep * 100, 2)
+                trades.append(ex)
+
+            # Sort all trades by submission time (most recent first)
+            trades.sort(key=lambda t: t.get('submitted_at', ''), reverse=True)
+
         except Exception as e:
             logger.warning(f"Could not fetch order history: {e}")
         

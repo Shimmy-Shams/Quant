@@ -279,7 +279,7 @@ class DashboardGenerator:
         return []
 
     def _load_trades(self) -> List[Dict]:
-        """Load recent trades"""
+        """Load recent trades with entry/exit details and PnL"""
         trades = []
 
         if self.live_state.exists():
@@ -288,14 +288,21 @@ class DashboardGenerator:
                     live_data = json.load(f)
                 for trade in live_data.get("recent_trades", []):
                     exec_date = trade.get("submitted_at", "")[:10] if trade.get("submitted_at") else "N/A"
-                    trades.append({
+                    trade_type = trade.get("trade_type", "entry")
+                    t = {
                         "symbol": trade["symbol"],
                         "side": trade["side"],
                         "qty": float(trade.get("qty", 0)),
                         "price": float(trade.get("filled_price", 0)),
                         "date": exec_date,
                         "status": "filled",
-                    })
+                        "trade_type": trade_type,
+                    }
+                    # Add entry_price and PnL for exits
+                    if trade_type == "exit":
+                        t["entry_price"] = float(trade.get("entry_price", 0))
+                        t["pnl_pct"] = trade.get("pnl_pct")
+                    trades.append(t)
                 if trades:
                     return sorted(trades, key=lambda x: x["date"], reverse=True)[:50]
             except Exception as e:
@@ -1040,23 +1047,35 @@ class DashboardGenerator:
                 '<p class="muted">No trades yet</p>';
             return;
         }}
-        let rows = trades.map(t => `
+        let rows = trades.map(t => {{
+            const isExit = t.trade_type === 'exit';
+            const typeLabel = isExit ? 'EXIT' : 'ENTRY';
+            const typeCls = isExit ? 'badge-sell' : 'badge-buy';
+            const fillPrice = `$${{fmt(t.price)}}`;
+            const entryCol = isExit && t.entry_price ? `$${{fmt(t.entry_price)}}` : (isExit ? '—' : fillPrice);
+            const exitCol = isExit ? fillPrice : '—';
+            const pnlCol = t.pnl_pct != null
+                ? `<span class="${{cls(t.pnl_pct)}}">${{fmtP(t.pnl_pct)}}</span>`
+                : '—';
+            return `
             <tr>
                 <td><strong>${{t.symbol}}</strong></td>
                 <td><span class="badge badge-${{t.side}}">${{t.side.toUpperCase()}}</span></td>
+                <td><span class="badge ${{typeCls}}">${{typeLabel}}</span></td>
                 <td>${{t.qty}}</td>
-                <td>$${{fmt(t.price)}}</td>
+                <td>${{entryCol}}</td>
+                <td>${{exitCol}}</td>
                 <td>${{t.date}}</td>
-                <td>${{t.pnl_pct != null ? `<span class="${{cls(t.pnl_pct)}}">${{fmtP(t.pnl_pct)}}</span>` : '—'}}</td>
-                <td><span class="badge badge-filled">${{t.status}}</span></td>
-            </tr>
-        `).join('');
+                <td>${{pnlCol}}</td>
+            </tr>`;
+        }}).join('');
 
         document.getElementById('trades-table').innerHTML = `
             <table>
                 <thead><tr>
-                    <th>Symbol</th><th>Side</th><th>Qty</th>
-                    <th>Price</th><th>Date</th><th>P&amp;L</th><th>Status</th>
+                    <th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
+                    <th>Entry $</th><th>Exit $</th>
+                    <th>Date</th><th>P&amp;L</th>
                 </tr></thead>
                 <tbody>${{rows}}</tbody>
             </table>`;
