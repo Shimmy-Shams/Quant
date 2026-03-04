@@ -8,6 +8,7 @@ and the headless trader (main_trader.py).
 import time
 import logging
 from pathlib import Path
+from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -228,9 +229,8 @@ def fetch_data(
                     coverage = len(cached) / len(universe) if universe else 0
                     if coverage >= min_coverage:
                         # Verify data freshness: check that the majority of
-                        # symbols have data ending on the same (latest) date.
-                        # This catches the case where file mtime is recent
-                        # (re-saved by Hurst) but data content is stale.
+                        # symbols have data ending on the same (latest) date,
+                        # AND that date is actually current (not days old).
                         end_dates = [
                             df.index.max() for df in cached.values() if len(df) > 0
                         ]
@@ -240,6 +240,24 @@ def fetch_data(
                                 1 for d in end_dates if d >= latest_data_date
                             )
                             data_freshness = fresh_count / len(end_dates)
+
+                            # Guard: data content must be current, not just
+                            # internally consistent.  Compare the latest bar
+                            # date against today using the trading calendar.
+                            from data.alpaca_data import _trading_days_between
+                            from datetime import date as _date
+                            _today = _date.today()
+                            _data_date = pd.Timestamp(latest_data_date).date()
+                            _missed = _trading_days_between(
+                                _data_date + timedelta(days=1), _today
+                            )
+                            if _missed > 0:
+                                logger.info(
+                                    f"Cache data ends {_data_date} but today is "
+                                    f"{_today} ({_missed} trading day(s) behind) "
+                                    f"— fetching from API"
+                                )
+                                data_freshness = 0.0  # force API fetch
                         else:
                             data_freshness = 0.0
 
