@@ -880,6 +880,10 @@ class BacktestEngine:
                                 i, sym_list[_bo_idx], str(dates[i].date())
                             ))
             _entry_candidates = np.flatnonzero(_cmask)
+            # Sort entry candidates by signal strength (strongest first)
+            _entry_candidates = _entry_candidates[
+                np.argsort(-np.abs(filt_signals[_entry_candidates]))
+            ]
 
             for sym_idx in _entry_candidates:
                 sig = filt_signals[sym_idx]

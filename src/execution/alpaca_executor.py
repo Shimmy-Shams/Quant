@@ -672,14 +672,17 @@ class AlpacaExecutor:
                 logger.debug(f"Sentiment module init failed: {e}")
                 _ns = None
 
-        for symbol in today_signals.index:
+        # Sort entry candidates by signal strength (strongest first)
+        sorted_symbols = today_signals.dropna().reindex(
+            today_signals.dropna().abs().sort_values(ascending=False).index
+        )
+
+        for symbol in sorted_symbols.index:
             # Skip if already in position (unless exiting today)
             if symbol in current_positions and symbol not in exiting_symbols:
                 continue
 
-            signal_val = today_signals[symbol]
-            if pd.isna(signal_val):
-                continue
+            signal_val = sorted_symbols[symbol]
 
             # Check entry threshold
             if abs(signal_val) <= config.entry_threshold:
