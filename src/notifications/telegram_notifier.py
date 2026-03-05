@@ -362,6 +362,53 @@ class TelegramNotifier:
 
         return self._send(text)
 
+    def notify_execution_preview(
+        self,
+        date,
+        planned_exits: List[Dict],
+        planned_entries: List[Dict],
+        holding: List[str],
+    ) -> bool:
+        """
+        Notification showing planned T+1 execution actions.
+
+        Sent after signal generation to show what will happen at market open.
+        """
+        header = (
+            f"<b>EXECUTION PREVIEW</b>  [T+1]\n"
+            f"Signals: {date}\n"
+            f"{'='*30}\n"
+        )
+
+        body = ""
+
+        if planned_exits:
+            body += f"\n<b>PLANNED EXITS ({len(planned_exits)}):</b>\n"
+            for ex in planned_exits:
+                pnl_sign = "+" if ex["pnl_pct"] >= 0 else ""
+                body += (
+                    f"  {ex['action']} {ex['qty']} {ex['symbol']}  "
+                    f"P&L: {pnl_sign}{ex['pnl_pct']:.2%}\n"
+                    f"    Reason: {ex['reason']}\n"
+                )
+        else:
+            body += "\nNo planned exits.\n"
+
+        if planned_entries:
+            body += f"\n<b>PLANNED ENTRIES ({len(planned_entries)}):</b>\n"
+            for en in planned_entries:
+                body += (
+                    f"  {en['action']} {en['symbol']}  "
+                    f"sig={en['signal']:+.3f}  ${en['price']:,.2f}\n"
+                )
+        else:
+            body += "\nNo planned entries.\n"
+
+        if holding:
+            body += f"\n<b>HOLDING ({len(holding)}):</b> {', '.join(holding)}\n"
+
+        return self._send(header + body)
+
     def notify_startup(self, mode: str, universe_size: int, pid: int) -> bool:
         """Notification when the trading service starts."""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

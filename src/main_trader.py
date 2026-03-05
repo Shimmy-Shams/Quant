@@ -686,6 +686,168 @@ def _log_signal_details(
     logger.info(f"  {'='*52}")
 
 
+def _log_execution_preview(
+    conn: AlpacaConnection,
+    sig_result: dict,
+    bt_config: BacktestConfig,
+) -> None:
+    """
+    Preview what the T+1 execution phase will do based on tonight's
+    signals and current positions.
+
+    Shows planned exits (signal reversion, stop-loss, etc.) and
+    planned entries, then sends a Telegram notification with the plan.
+    """
+    try:
+        signal_df = sig_result["signal_df"]
+        zscore_df = sig_result["zscore_df"]
+        price_df = sig_result["price_df"]
+
+        today = signal_df.index[-1]
+        today_signals = signal_df.loc[today].dropna()
+        today_zscores = zscore_df.loc[today].dropna()
+        today_prices = price_df.loc[today].dropna()
+
+        # Get current positions
+        positions_raw = conn.get_positions()
+        if not positions_raw:
+            return  # No positions, entries are already shown in signal summary
+
+        entry_dates = _get_entry_dates_from_orders(conn)
+
+        current_positions: Dict[str, Dict] = {}
+        for pos in positions_raw:
+            sym = pos["symbol"]
+            current_positions[sym] = {
+                "qty": int(pos["qty"]),
+                "side": "long" if int(pos["qty"]) > 0 else "short",
+                "entry_price": float(pos["avg_entry_price"]),
+                "current_price": float(pos["current_price"]),
+                "entry_date": entry_dates.get(sym, pd.Timestamp.now() - pd.Timedelta(days=1)),
+            }
+
+        # Evaluate exits
+        planned_exits = []
+        for sym, pos_info in current_positions.items():
+            entry_price = pos_info["entry_price"]
+            current_price = pos_info["current_price"]
+            side = pos_info["side"]
+            days_held = (today - pos_info["entry_date"]).days
+
+            # Direction-aware PnL
+            if side == "long":
+                pnl_pct = (current_price - entry_price) / entry_price
+            else:
+                pnl_pct = (entry_price - current_price) / entry_price
+
+            exit_reason = None
+
+            # 1. Signal exit (z-score reversion)
+            if sym in today_zscores.index:
+                z = today_zscores[sym]
+                if not pd.isna(z):
+                    if side == "long" and z > -bt_config.exit_threshold:
+                        exit_reason = f"Signal revert (z={z:+.2f} > -{bt_config.exit_threshold})"
+                    elif side == "short" and z < bt_config.exit_threshold:
+                        exit_reason = f"Signal revert (z={z:+.2f} < +{bt_config.exit_threshold})"
+
+            # 2. Stop loss (note: Alpaca stop orders handle this in real-time,
+            #    but signal-based stops may also trigger)
+            if not exit_reason and bt_config.stop_loss_pct is not None:
+                sl = bt_config.short_stop_loss_pct if (
+                    side == "short" and bt_config.short_stop_loss_pct
+                ) else bt_config.stop_loss_pct
+                if pnl_pct < -sl:
+                    exit_reason = f"Stop loss ({pnl_pct:.2%})"
+
+            # 3. Take profit
+            if not exit_reason and bt_config.take_profit_pct is not None:
+                if pnl_pct > bt_config.take_profit_pct:
+                    exit_reason = f"Take profit ({pnl_pct:.2%})"
+
+            # 4. Max holding days
+            if not exit_reason and bt_config.max_holding_days and days_held >= bt_config.max_holding_days:
+                exit_reason = f"Max holding ({days_held}d)"
+
+            if exit_reason:
+                action = "SELL" if side == "long" else "COVER"
+                planned_exits.append({
+                    "symbol": sym,
+                    "action": action,
+                    "side": side,
+                    "qty": abs(pos_info["qty"]),
+                    "pnl_pct": pnl_pct,
+                    "reason": exit_reason,
+                })
+
+        # Evaluate entries
+        entry_threshold = bt_config.entry_threshold
+        exiting_syms = {e["symbol"] for e in planned_exits}
+        planned_entries = []
+        for sym, sig in today_signals.items():
+            if pd.isna(sig) or abs(sig) <= entry_threshold:
+                continue
+            if sym in current_positions and sym not in exiting_syms:
+                continue  # Already held, not exiting
+            action = "BUY" if sig < 0 else "SHORT"
+            planned_entries.append({
+                "symbol": sym,
+                "action": action,
+                "signal": float(sig),
+                "price": float(today_prices.get(sym, 0)),
+            })
+
+        # Positions continuing to hold
+        holding = [
+            sym for sym in current_positions
+            if sym not in exiting_syms
+        ]
+
+        # Log the preview
+        logger.info(f"  {'─'*52}")
+        logger.info(f"  EXECUTION PREVIEW — T+1 Planned Actions")
+        logger.info(f"  {'─'*52}")
+
+        if planned_exits:
+            logger.info(f"  PLANNED EXITS ({len(planned_exits)}):")
+            for ex in planned_exits:
+                pnl_sign = "+" if ex["pnl_pct"] >= 0 else ""
+                logger.info(
+                    f"    {ex['action']} {ex['qty']} {ex['symbol']:<6s} | "
+                    f"P&L: {pnl_sign}{ex['pnl_pct']:.2%} | {ex['reason']}"
+                )
+        else:
+            logger.info(f"  No planned exits (all {len(current_positions)} positions holding)")
+
+        if planned_entries:
+            logger.info(f"  PLANNED ENTRIES ({len(planned_entries)}):")
+            for en in planned_entries:
+                logger.info(
+                    f"    {en['action']} {en['symbol']:<6s} | "
+                    f"signal={en['signal']:+.3f} | ${en['price']:,.2f}"
+                )
+        else:
+            logger.info(f"  No planned entries")
+
+        if holding:
+            logger.info(f"  HOLDING ({len(holding)}): {', '.join(holding)}")
+
+        logger.info(f"  {'─'*52}")
+
+        # Telegram notification with execution preview
+        _tg = get_notifier()
+        if _tg:
+            _tg.notify_execution_preview(
+                date=today.date(),
+                planned_exits=planned_exits,
+                planned_entries=planned_entries,
+                holding=holding,
+            )
+
+    except Exception as e:
+        logger.warning(f"Execution preview failed: {e}")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TWO-PHASE EXECUTION FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -781,6 +943,7 @@ def run_signal_generation_phase(
             "price_df": price_df,
             "volume_df": volume_df,
             "universe": universe_active,
+            "actionable_count": int(entry_count),
         }
     except Exception as e:
         logger.error(f"Signal generation phase failed: {e}", exc_info=True)
@@ -1753,6 +1916,10 @@ def main():
 
             today = _et_today()
 
+            # Daily counters for Telegram summary
+            day_signals_generated = 0
+            day_trades_executed = 0
+
             # ═══════════════════════════════════════════════════════
             # --once and --interval modes: legacy full cycle
             # (signal gen + execution in one shot — for cron / testing)
@@ -1812,6 +1979,7 @@ def main():
                         executor=executor, shadow_sim=shadow_sim,
                     )
                     last_trade_date = today
+                    day_trades_executed = result.get("filled", 0)
                     logger.info(f"Cycle {cycle_count} result: {result}")
 
                     # Immediate post-trade dashboard
@@ -1859,6 +2027,13 @@ def main():
                 if sig_result is not None:
                     last_signal_date = today
                     universe = sig_result["universe"]
+                    day_signals_generated = sig_result.get("actionable_count", 0)
+
+                    # ── Execution Preview: show planned T+1 actions ──
+                    if mode == TradingMode.LIVE:
+                        _log_execution_preview(
+                            conn, sig_result, bt_config,
+                        )
 
             # ── Post-close dashboard refresh ──
             if not args.no_dashboard:
@@ -1898,6 +2073,8 @@ def main():
                         positions=pos_list,
                         day_pnl=day_pnl,
                         day_pnl_pct=day_pnl_pct,
+                        signals_generated=day_signals_generated,
+                        trades_executed=day_trades_executed,
                     )
                 except Exception as e:
                     logger.warning(f"Daily summary telegram failed: {e}")
