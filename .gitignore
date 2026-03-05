@@ -42,6 +42,14 @@ logs/
 # Signal cache (machine-local, generated per-environment)
 data/snapshots/signal_cache/
 
+# Alpaca market data cache (regenerated on each cycle)
+data/snapshots/alpaca_cache/
+
+# Sentiment cache (regenerated)
+data/snapshots/sentiment_cache.json
+data/snapshots/earnings_cache.json
+data/snapshots/earnings_historical_cache.json
+
 # Runtime state files (pushed to dashboard-live branch, not main)
 data/snapshots/signal_history.json
 data/snapshots/trade_history.json
