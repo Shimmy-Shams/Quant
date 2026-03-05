@@ -1956,6 +1956,12 @@ def main():
     cycle_count = 0
     last_trade_date = None
     last_signal_date = None
+    last_summary_date = None
+
+    # Daily counters for Telegram summary (persist across loop iterations)
+    day_signals_generated = 0
+    day_trades_executed = 0
+    _counter_date = None  # Track which day counters belong to
 
     while not SHUTDOWN_REQUESTED:
         try:
@@ -1967,9 +1973,11 @@ def main():
 
             today = _et_today()
 
-            # Daily counters for Telegram summary
-            day_signals_generated = 0
-            day_trades_executed = 0
+            # Reset counters only when the date changes
+            if _counter_date != today:
+                day_signals_generated = 0
+                day_trades_executed = 0
+                _counter_date = today
 
             # ═══════════════════════════════════════════════════════
             # --once and --interval modes: legacy full cycle
@@ -2091,48 +2099,50 @@ def main():
                 _save_live_state(conn)
                 _generate_and_push_dashboard(args.push_dashboard)
 
-            # ── Telegram: daily summary ──
-            _tg = get_notifier()
-            if _tg and mode == TradingMode.LIVE:
-                try:
-                    account = conn.get_account()
-                    pos_list = []
-                    for pos in conn.get_positions():
-                        qty = int(pos["qty"])
-                        entry_px = float(pos["avg_entry_price"])
-                        current_px = float(pos["current_price"])
-                        if qty > 0:
-                            pnl_pct = (current_px - entry_px) / entry_px
-                        else:
-                            pnl_pct = (entry_px - current_px) / entry_px
-                        pos_list.append({
-                            "symbol": pos["symbol"],
-                            "side": "long" if qty > 0 else "short",
-                            "qty": abs(qty),
-                            "entry_price": entry_px,
-                            "current_price": current_px,
-                            "pnl_pct": pnl_pct,
-                        })
-                    day_pnl = float(account.get("equity", 0)) - float(account.get("last_equity", account.get("equity", 0)))
-                    port_val = float(account["portfolio_value"])
-                    day_pnl_pct = day_pnl / port_val if port_val > 0 else 0
-                    _tg.notify_daily_summary(
-                        date=pd.Timestamp.now().date(),
-                        mode=mode.value,
-                        portfolio_value=port_val,
-                        cash=float(account["cash"]),
-                        positions=pos_list,
-                        day_pnl=day_pnl,
-                        day_pnl_pct=day_pnl_pct,
-                        signals_generated=day_signals_generated,
-                        trades_executed=day_trades_executed,
-                    )
-                except Exception as e:
-                    logger.warning(f"Daily summary telegram failed: {e}")
+            # ── Telegram: daily summary (once per day, after signal gen) ──
+            if last_summary_date != today:
+                _tg = get_notifier()
+                if _tg and mode == TradingMode.LIVE:
+                    try:
+                        account = conn.get_account()
+                        pos_list = []
+                        for pos in conn.get_positions():
+                            qty = int(pos["qty"])
+                            entry_px = float(pos["avg_entry_price"])
+                            current_px = float(pos["current_price"])
+                            if qty > 0:
+                                pnl_pct = (current_px - entry_px) / entry_px
+                            else:
+                                pnl_pct = (entry_px - current_px) / entry_px
+                            pos_list.append({
+                                "symbol": pos["symbol"],
+                                "side": "long" if qty > 0 else "short",
+                                "qty": abs(qty),
+                                "entry_price": entry_px,
+                                "current_price": current_px,
+                                "pnl_pct": pnl_pct,
+                            })
+                        day_pnl = float(account.get("equity", 0)) - float(account.get("last_equity", account.get("equity", 0)))
+                        port_val = float(account["portfolio_value"])
+                        day_pnl_pct = day_pnl / port_val if port_val > 0 else 0
+                        _tg.notify_daily_summary(
+                            date=pd.Timestamp.now().date(),
+                            mode=mode.value,
+                            portfolio_value=port_val,
+                            cash=float(account["cash"]),
+                            positions=pos_list,
+                            day_pnl=day_pnl,
+                            day_pnl_pct=day_pnl_pct,
+                            signals_generated=day_signals_generated,
+                            trades_executed=day_trades_executed,
+                        )
+                        last_summary_date = today
+                    except Exception as e:
+                        logger.warning(f"Daily summary telegram failed: {e}")
 
             # ── Sleep until next trading day ──
-            logger.info("Daily cycle complete — sleeping until next trading day...")
-            _interruptible_sleep(3600)
+            logger.info("Daily cycle complete — sleeping 3h until next check...")
+            _interruptible_sleep(10800)
 
         except KeyboardInterrupt:
             break
