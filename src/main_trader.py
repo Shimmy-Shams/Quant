@@ -1755,6 +1755,10 @@ def parse_args():
         "--generate-signals", action="store_true",
         help="Manually run signal generation phase and exit (for cache priming)"
     )
+    parser.add_argument(
+        "--force-execute", action="store_true",
+        help="Force trade execution from cached signals regardless of time window, then exit"
+    )
     return parser.parse_args()
 
 
@@ -1816,6 +1820,47 @@ def main():
         else:
             logger.error("Signal generation FAILED")
             sys.exit(1)
+        return
+
+    # ── Force-execute: run trade execution from cached signals now ──
+    if args.force_execute:
+        mode = TradingMode.LIVE if args.mode == "live" else TradingMode.SHADOW
+        log_dir = PROJECT_ROOT / "data" / "logs"
+        setup_logging(log_dir, args.log_level)
+        logger.info("=" * 60)
+        logger.info(f"  FORCED TRADE EXECUTION — {mode.value.upper()} MODE")
+        logger.info("=" * 60)
+
+        config = ConfigLoader()
+        bt_config = config.to_backtest_config()
+
+        alpaca_config = AlpacaConfig.from_env()
+        alpaca_config.trading_mode = mode
+        conn = AlpacaConnection(alpaca_config)
+        conn.test_connection()
+
+        # Retrofit stop-loss for unprotected positions first
+        if mode == TradingMode.LIVE:
+            _retrofit_bracket_orders(conn, bt_config)
+
+        signal_cache = _load_signal_cache(mode)
+        if signal_cache is None:
+            logger.error("No valid signal cache — cannot execute. Run --generate-signals first.")
+            sys.exit(1)
+
+        executor = AlpacaExecutor(conn, bt_config) if mode == TradingMode.LIVE else None
+
+        result = run_trade_execution_phase(
+            conn=conn, signal_cache=signal_cache,
+            bt_config=bt_config, mode=mode,
+            executor=executor,
+        )
+        logger.info(f"Force-execute result: {result}")
+
+        if not args.no_dashboard:
+            _save_live_state(conn)
+            _generate_and_push_dashboard(args.push_dashboard)
+
         return
 
     mode = TradingMode.LIVE if args.mode == "live" else TradingMode.SHADOW
