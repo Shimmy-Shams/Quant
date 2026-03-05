@@ -165,6 +165,28 @@ class AlpacaExecutor:
         else:  # sell, short
             return round(reference_price * (1 - self.max_slippage_pct), 2)
 
+    def _wait_for_cancel_settle(
+        self, symbol: str, timeout: float = 10.0
+    ) -> None:
+        """Poll until no open orders remain for *symbol*.
+
+        Alpaca cancels are async — the shares stay \"held_for_orders\"
+        until every cancel request fully settles.  Polling removes the
+        fragile static sleep that sometimes wasn't long enough.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            open_orders = self.connection.get_orders(status='open')
+            sym_orders = [o for o in open_orders if o.get('symbol') == symbol]
+            if not sym_orders:
+                logger.info(f"✅ {symbol} cancel settled — no open orders")
+                return
+            time.sleep(0.5)
+        logger.warning(
+            f"⚠️ {symbol} cancel settle timed-out after {timeout}s "
+            f"— proceeding anyway"
+        )
+
     def _poll_fill_price(
         self,
         order_id: str,
@@ -238,9 +260,9 @@ class AlpacaExecutor:
                         f"{decision.symbol} before exit"
                     )
                     # Alpaca cancel is async — shares stay "held_for_orders"
-                    # until the cancel fully settles. Wait before submitting
-                    # the exit order to avoid "insufficient qty" errors.
-                    time.sleep(1.5)
+                    # until the cancel fully settles.  Poll until the
+                    # cancellation is confirmed rather than a static sleep.
+                    self._wait_for_cancel_settle(decision.symbol, timeout=10.0)
 
             # ── Compute limit price for slippage protection ──
             limit_price = self._compute_limit_price(price, decision.action)
@@ -351,8 +373,16 @@ class AlpacaExecutor:
 
         if filled_price is not None:
             logger.info(f"✅ {symbol} entry filled @ ${filled_price:.2f}")
-        else:
+        elif fill_status in ('filled',):
+            # Filled but no price — use estimated
             filled_price = estimated_price
+        else:
+            # Order is still open/new — NOT filled yet
+            logger.warning(
+                f"⚠️ {symbol} entry NOT filled after {max_wait_sec}s "
+                f"(status: {fill_status}) — skipping stop-loss placement"
+            )
+            return estimated_price
 
         # ── Compute stop-loss price ────────────────────────────────
         from execution.intraday_monitor import IntradayMonitor

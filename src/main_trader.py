@@ -1032,9 +1032,15 @@ def run_trade_execution_phase(
                 "entry_date": entry_dates.get(sym, pd.Timestamp.now() - pd.Timedelta(days=1)),
             }
 
-        # Fetch real-time prices for exit evaluation
+        # Fetch real-time prices for held positions AND entry candidates
         held_symbols = list(current_positions.keys())
-        live_prices = conn.get_latest_trades(held_symbols) if held_symbols else {}
+        entry_candidates = [
+            sym for sym in today_signals.index
+            if abs(today_signals[sym]) > bt_config.entry_threshold
+            and sym not in current_positions
+        ]
+        all_price_symbols = list(set(held_symbols + entry_candidates))
+        live_prices = conn.get_latest_trades(all_price_symbols) if all_price_symbols else {}
 
         # Overlay live prices onto the cached price DataFrame
         if live_prices:
