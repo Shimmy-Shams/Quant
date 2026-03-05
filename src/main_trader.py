@@ -1848,7 +1848,7 @@ def main():
             logger.error("No valid signal cache — cannot execute. Run --generate-signals first.")
             sys.exit(1)
 
-        executor = AlpacaExecutor(conn, bt_config) if mode == TradingMode.LIVE else None
+        executor = build_executor(conn, bt_config, mode) if mode == TradingMode.LIVE else None
 
         result = run_trade_execution_phase(
             conn=conn, signal_cache=signal_cache,
