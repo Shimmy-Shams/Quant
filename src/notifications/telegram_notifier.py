@@ -14,6 +14,7 @@ All sends are fire-and-forget with error logging -- never blocks trading logic.
 
 import logging
 import os
+import html
 import urllib.request
 import urllib.parse
 import json
@@ -386,10 +387,11 @@ class TelegramNotifier:
             body += f"\n<b>PLANNED EXITS ({len(planned_exits)}):</b>\n"
             for ex in planned_exits:
                 pnl_sign = "+" if ex["pnl_pct"] >= 0 else ""
+                reason = html.escape(ex['reason'])
                 body += (
                     f"  {ex['action']} {ex['qty']} {ex['symbol']}  "
                     f"P&L: {pnl_sign}{ex['pnl_pct']:.2%}\n"
-                    f"    Reason: {ex['reason']}\n"
+                    f"    Reason: {reason}\n"
                 )
         else:
             body += "\nNo planned exits.\n"
