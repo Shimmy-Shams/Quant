@@ -736,7 +736,6 @@ class DashboardGenerator:
         const openPnl = calcOpenPnl();
         const totalPnl = pv - INITIAL_CAPITAL;
         const closedPnl = totalPnl - openPnl;
-        const totalPnl = pv - INITIAL_CAPITAL;
 
         const cards = [
             {{ label: 'Portfolio Value', value: fmtD(pv), cls: '' }},
