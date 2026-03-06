@@ -1602,6 +1602,178 @@ def _wait_for_post_close() -> None:
     _interruptible_sleep(wait_secs)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BACKUP SYSTEM — Local rolling + daily git backup
+# ═══════════════════════════════════════════════════════════════════════════
+
+BACKUP_DIR = Path("/home/trader/backups")
+BACKUP_RETENTION_DAYS = 30
+BACKUP_BRANCH = "data-backup"
+
+# Files to back up from data/snapshots/
+_BACKUP_SNAPSHOT_FILES = [
+    "live_state.json",
+    "signal_history.json",
+    "trade_history.json",
+    "equity_history.json",
+    "intraday_equity.json",
+    "sentiment_cache.json",
+    "earnings_cache.json",
+    "earnings_historical_cache.json",
+    "hurst_rankings.csv",
+    "shadow_state.csv",
+]
+
+
+def _backup_data_local() -> None:
+    """
+    Rolling local backup: copy snapshot files to /home/trader/backups/YYYY-MM-DD/.
+    Prunes backups older than BACKUP_RETENTION_DAYS.
+    """
+    try:
+        import shutil
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        dest = BACKUP_DIR / today_str
+        dest.mkdir(parents=True, exist_ok=True)
+
+        snapshot_dir = PROJECT_ROOT / "data" / "snapshots"
+        copied = 0
+        for fname in _BACKUP_SNAPSHOT_FILES:
+            src = snapshot_dir / fname
+            if src.exists():
+                shutil.copy2(str(src), str(dest / fname))
+                copied += 1
+
+        # Also back up .env for disaster recovery
+        env_file = PROJECT_ROOT / ".env"
+        if env_file.exists():
+            shutil.copy2(str(env_file), str(dest / ".env"))
+
+        logger.info(f"Local backup: {copied} files → {dest}")
+
+        # Prune old backups
+        cutoff = datetime.now() - timedelta(days=BACKUP_RETENTION_DAYS)
+        if BACKUP_DIR.exists():
+            for d in sorted(BACKUP_DIR.iterdir()):
+                if d.is_dir():
+                    try:
+                        dir_date = datetime.strptime(d.name, "%Y-%m-%d")
+                        if dir_date < cutoff:
+                            shutil.rmtree(str(d))
+                            logger.info(f"Pruned old backup: {d.name}")
+                    except ValueError:
+                        pass  # skip non-date directories
+
+    except Exception as e:
+        logger.warning(f"Local backup failed: {e}")
+
+
+def _backup_data_git() -> None:
+    """
+    Push snapshot data to 'data-backup' orphan branch using hash-object approach.
+    Safe: never switches branches or touches working tree.
+    """
+    try:
+        import subprocess
+        import tempfile
+        import shutil
+
+        snapshot_dir = PROJECT_ROOT / "data" / "snapshots"
+
+        # Collect files to back up
+        files_to_backup = {}
+        for fname in _BACKUP_SNAPSHOT_FILES:
+            fpath = snapshot_dir / fname
+            if fpath.exists():
+                files_to_backup[f"data/snapshots/{fname}"] = fpath
+
+        # Also include .env
+        env_file = PROJECT_ROOT / ".env"
+        if env_file.exists():
+            files_to_backup[".env"] = env_file
+
+        if not files_to_backup:
+            logger.warning("Git backup: no files to back up")
+            return
+
+        tmpdir = tempfile.mkdtemp(prefix="data_backup_")
+        try:
+            idx_file = str(Path(tmpdir) / "_index")
+            idx_env = {**os.environ, "GIT_INDEX_FILE": idx_file}
+
+            for rel_path, src_path in sorted(files_to_backup.items()):
+                blob = subprocess.run(
+                    ["git", "-C", str(PROJECT_ROOT), "hash-object", "-w", str(src_path)],
+                    capture_output=True, timeout=10,
+                ).stdout.decode().strip()
+                subprocess.run(
+                    ["git", "-C", str(PROJECT_ROOT), "update-index",
+                     "--add", "--cacheinfo", f"100644,{blob},{rel_path}"],
+                    capture_output=True, env=idx_env, timeout=10,
+                )
+
+            tree_result = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "write-tree"],
+                capture_output=True, env=idx_env, timeout=10,
+            )
+            if tree_result.returncode != 0:
+                logger.warning(f"Git backup write-tree failed: {tree_result.stderr.decode()}")
+                return
+
+            tree_sha = tree_result.stdout.decode().strip()
+            commit_msg = f"Data backup {datetime.now():%Y-%m-%d %H:%M}"
+
+            # Try to parent on existing branch tip (keeps history)
+            parent_args = []
+            parent_result = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "rev-parse", "--verify", f"refs/heads/{BACKUP_BRANCH}"],
+                capture_output=True, timeout=10,
+            )
+            if parent_result.returncode == 0:
+                parent_sha = parent_result.stdout.decode().strip()
+                parent_args = ["-p", parent_sha]
+
+            commit_result = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "commit-tree", tree_sha]
+                + parent_args + ["-m", commit_msg],
+                capture_output=True, timeout=15,
+            )
+            if commit_result.returncode != 0:
+                logger.warning(f"Git backup commit-tree failed: {commit_result.stderr.decode()}")
+                return
+
+            commit_sha = commit_result.stdout.decode().strip()
+            subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "update-ref",
+                 f"refs/heads/{BACKUP_BRANCH}", commit_sha],
+                capture_output=True, timeout=15,
+            )
+
+            push_result = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "push", "origin", BACKUP_BRANCH, "--force"],
+                capture_output=True, timeout=30,
+            )
+            if push_result.returncode == 0:
+                logger.info(f"Git backup: {len(files_to_backup)} files → {BACKUP_BRANCH} branch")
+            else:
+                logger.warning(f"Git backup push failed: {push_result.stderr.decode()}")
+
+        finally:
+            if Path(tmpdir).exists():
+                shutil.rmtree(tmpdir, ignore_errors=True)
+
+    except Exception as e:
+        logger.warning(f"Git backup failed: {e}")
+
+
+def _daily_backup() -> None:
+    """Run both local and git backups. Called once per day after post-close."""
+    logger.info("Running daily backup...")
+    _backup_data_local()
+    _backup_data_git()
+    logger.info("Daily backup complete ✓")
+
+
 def _generate_and_push_dashboard(auto_push: bool = False) -> None:
     """
     Generate static dashboard and optionally push to GitHub.
@@ -2118,6 +2290,9 @@ def main():
                 _save_live_state(conn)
                 _generate_and_push_dashboard(args.push_dashboard)
 
+            # ── Daily backup (local rolling + git) ──
+            _daily_backup()
+
             # ── Telegram: daily summary (once per day, after signal gen) ──
             if last_summary_date != today:
                 _tg = get_notifier()
@@ -2180,6 +2355,9 @@ def main():
         logger.info(f"  Final equity: ${shadow_sim.equity:,.2f}")
         logger.info(f"  Open positions: {len(shadow_sim.positions)}")
     logger.info("=" * 60)
+
+    # Final backup before exit
+    _backup_data_local()
 
     _tg = get_notifier()
     if _tg:

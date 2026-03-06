@@ -20,6 +20,8 @@
 #   restart             Restart the service (no code pull)
 #   stop                Stop the service
 #   start               Start the service
+#   backup              Manual backup (local rolling + git data-backup branch)
+#   restore [date]      List available backups or restore from a date
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -328,6 +330,174 @@ cmd_start() {
     fi
 }
 
+cmd_backup() {
+    header "MANUAL BACKUP"
+    info "Running local + git backup on VM..."
+    vm_python <<'PYEOF'
+import sys, os
+sys.path.insert(0, "src")
+os.chdir("/home/trader/Quant")
+
+# Minimal bootstrap to call backup functions
+from pathlib import Path
+from datetime import datetime, timedelta
+import shutil, subprocess, json, logging
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("backup")
+
+PROJECT_ROOT = Path("/home/trader/Quant")
+BACKUP_DIR = Path("/home/trader/backups")
+BACKUP_RETENTION_DAYS = 30
+BACKUP_BRANCH = "data-backup"
+
+SNAPSHOT_FILES = [
+    "live_state.json", "signal_history.json", "trade_history.json",
+    "equity_history.json", "intraday_equity.json", "sentiment_cache.json",
+    "earnings_cache.json", "earnings_historical_cache.json",
+    "hurst_rankings.csv", "shadow_state.csv",
+]
+
+# Local backup
+today_str = datetime.now().strftime("%Y-%m-%d")
+dest = BACKUP_DIR / today_str
+dest.mkdir(parents=True, exist_ok=True)
+snapshot_dir = PROJECT_ROOT / "data" / "snapshots"
+copied = 0
+for fname in SNAPSHOT_FILES:
+    src = snapshot_dir / fname
+    if src.exists():
+        shutil.copy2(str(src), str(dest / fname))
+        copied += 1
+env_file = PROJECT_ROOT / ".env"
+if env_file.exists():
+    shutil.copy2(str(env_file), str(dest / ".env"))
+logger.info(f"Local backup: {copied} files -> {dest}")
+
+# Prune old
+cutoff = datetime.now() - timedelta(days=BACKUP_RETENTION_DAYS)
+for d in sorted(BACKUP_DIR.iterdir()):
+    if d.is_dir():
+        try:
+            dir_date = datetime.strptime(d.name, "%Y-%m-%d")
+            if dir_date < cutoff:
+                shutil.rmtree(str(d))
+                logger.info(f"Pruned: {d.name}")
+        except ValueError:
+            pass
+
+# Git backup
+import tempfile
+files_to_backup = {}
+for fname in SNAPSHOT_FILES:
+    fpath = snapshot_dir / fname
+    if fpath.exists():
+        files_to_backup[f"data/snapshots/{fname}"] = fpath
+if env_file.exists():
+    files_to_backup[".env"] = env_file
+
+tmpdir = tempfile.mkdtemp(prefix="data_backup_")
+try:
+    idx_file = str(Path(tmpdir) / "_index")
+    idx_env = {**os.environ, "GIT_INDEX_FILE": idx_file}
+    for rel_path, src_path in sorted(files_to_backup.items()):
+        blob = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "hash-object", "-w", str(src_path)],
+            capture_output=True, timeout=10,
+        ).stdout.decode().strip()
+        subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "update-index",
+             "--add", "--cacheinfo", f"100644,{blob},{rel_path}"],
+            capture_output=True, env=idx_env, timeout=10,
+        )
+    tree_sha = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "write-tree"],
+        capture_output=True, env=idx_env, timeout=10,
+    ).stdout.decode().strip()
+    commit_msg = f"Data backup {datetime.now():%Y-%m-%d %H:%M}"
+    parent_args = []
+    pr = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "rev-parse", "--verify", f"refs/heads/{BACKUP_BRANCH}"],
+        capture_output=True, timeout=10,
+    )
+    if pr.returncode == 0:
+        parent_args = ["-p", pr.stdout.decode().strip()]
+    commit_sha = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "commit-tree", tree_sha] + parent_args + ["-m", commit_msg],
+        capture_output=True, timeout=15,
+    ).stdout.decode().strip()
+    subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "update-ref", f"refs/heads/{BACKUP_BRANCH}", commit_sha],
+        capture_output=True, timeout=15,
+    )
+    push = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "push", "origin", BACKUP_BRANCH, "--force"],
+        capture_output=True, timeout=30,
+    )
+    if push.returncode == 0:
+        logger.info(f"Git backup: {len(files_to_backup)} files -> {BACKUP_BRANCH}")
+    else:
+        logger.info(f"Git push failed: {push.stderr.decode()}")
+finally:
+    shutil.rmtree(tmpdir, ignore_errors=True)
+PYEOF
+    ok "Backup complete"
+}
+
+cmd_restore() {
+    local date="${1:-}"
+
+    if [[ -z "$date" ]]; then
+        header "AVAILABLE BACKUPS"
+        info "Local backups on VM (/home/trader/backups/):"
+        vm_trader "ls -1 /home/trader/backups/ 2>/dev/null || echo '(none)'"
+        echo ""
+        info "To restore: ./ops.sh restore YYYY-MM-DD"
+        return
+    fi
+
+    header "RESTORE FROM $date"
+
+    # Verify backup exists
+    local exists
+    exists=$(vm_trader "test -d /home/trader/backups/$date && echo yes || echo no")
+    if [[ "$exists" != "yes" ]]; then
+        fail "No local backup found for $date"
+    fi
+
+    info "Files in backup $date:"
+    vm_trader "ls -la /home/trader/backups/$date/"
+
+    echo ""
+    read -rp "Restore these files to data/snapshots/? (y/N) " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        warn "Aborted"
+        return
+    fi
+
+    info "Stopping service..."
+    vm_sudo "sudo systemctl stop $SERVICE" || true
+    sleep 2
+
+    info "Restoring snapshot files..."
+    vm_trader "cp -v /home/trader/backups/$date/*.json $REPO_DIR/data/snapshots/ 2>/dev/null || true"
+    vm_trader "cp -v /home/trader/backups/$date/*.csv $REPO_DIR/data/snapshots/ 2>/dev/null || true"
+
+    info "Restoring .env (if present in backup)..."
+    vm_trader "test -f /home/trader/backups/$date/.env && cp -v /home/trader/backups/$date/.env $REPO_DIR/.env || echo 'No .env in backup'"
+
+    info "Restarting service..."
+    vm_sudo "sudo systemctl start $SERVICE"
+    sleep 3
+    local status
+    status=$(vm_sudo "sudo systemctl is-active $SERVICE")
+    if [[ "$status" == "active" ]]; then
+        ok "Restore complete — service is ACTIVE"
+    else
+        fail "Service is $status after restore — check ./ops.sh logs"
+    fi
+}
+
 # ── Dispatch ────────────────────────────────────────────────────────────
 
 cmd="${1:-help}"
@@ -347,6 +517,8 @@ case "$cmd" in
     restart)    cmd_restart ;;
     stop)       cmd_stop ;;
     start)      cmd_start ;;
+    backup)     cmd_backup ;;
+    restore)    cmd_restore "$@" ;;
     help|--help|-h)
         echo "Usage: ./ops.sh <command> [args]"
         echo ""
@@ -364,6 +536,8 @@ case "$cmd" in
         echo "  restart             Restart service (no code pull)"
         echo "  stop                Stop service"
         echo "  start               Start service"
+        echo "  backup              Manual backup (local + git data-backup branch)"
+        echo "  restore [date]      List backups or restore from YYYY-MM-DD"
         echo ""
         echo "Examples:"
         echo "  ./ops.sh deploy                   # Full deploy pipeline"
