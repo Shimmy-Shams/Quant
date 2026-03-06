@@ -177,8 +177,10 @@ backtest:
     threshold: 0.10           # Block short if stock rose > 10% in lookback
 
   # Trailing Stop (Phase B.3 - locks in profits after activation)
+  # Parameter sweep showed trailing stop HURTS performance (Sharpe drag -0.47 in 1yr)
+  # Baseline (OFF) ranks #1 in every time window — turned off 2025-03-06
   trailing_stop:
-    enabled: true
+    enabled: false
     trail_pct: 0.05                 # Trail at 5% from peak profit
     activation_pct: 0.02            # Activate after 2% profit achieved
 

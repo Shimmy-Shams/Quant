@@ -1254,12 +1254,17 @@ def _save_live_state(conn: AlpacaConnection) -> None:
         # Get account info
         account = conn.get_account()
         
+        # Get entry dates for positions (for dashboard display)
+        entry_dates = _get_entry_dates_from_orders(conn)
+        
         # Get current positions
         positions = []
         for pos in conn.get_positions():
             raw_qty = float(pos["qty"])
+            sym = pos["symbol"]
+            ed = entry_dates.get(sym)
             positions.append({
-                "symbol": pos["symbol"],
+                "symbol": sym,
                 "qty": abs(raw_qty),
                 "side": "long" if raw_qty > 0 else "short",
                 "entry_price": float(pos["avg_entry_price"]),
@@ -1267,6 +1272,7 @@ def _save_live_state(conn: AlpacaConnection) -> None:
                 "market_value": abs(float(pos["market_value"])),
                 "unrealized_pl": float(pos["unrealized_pl"]),
                 "unrealized_plpc": float(pos["unrealized_plpc"]) * 100,
+                "entry_date": ed.strftime("%Y-%m-%d") if ed else None,
             })
         
         # Get recent filled orders (last 50) with entry/exit classification

@@ -662,7 +662,7 @@ class AlpacaConnection:
         Returns:
             List of {'timestamp': 'YYYY-MM-DD HH:MM', 'equity': float} dicts
         """
-        return self.get_portfolio_history(period="1D", timeframe="15Min")
+        return self.get_portfolio_history(period="1D", timeframe="5Min")
 
     def get_portfolio_history(self, period: str = "3M", timeframe: str = "1D") -> List[Dict]:
         """

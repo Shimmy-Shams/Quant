@@ -523,7 +523,14 @@ class DashboardGenerator:
 
         <!-- Recent Trades -->
         <div class="section">
-            <div class="section-title">Recent Trades</div>
+            <div class="section-header">
+                <div class="section-title">Recent Trades</div>
+                <div id="trades-filter-toggle" class="range-toggle">
+                    <button class="toggle-btn active" data-filter="all" onclick="setTradeFilter('all')">All</button>
+                    <button class="toggle-btn" data-filter="entry" onclick="setTradeFilter('entry')">Entries</button>
+                    <button class="toggle-btn" data-filter="exit" onclick="setTradeFilter('exit')">Exits</button>
+                </div>
+            </div>
             <div id="trades-table" class="table-wrap"></div>
         </div>
 
@@ -708,19 +715,50 @@ class DashboardGenerator:
 
     // ── Render helpers ────────────────────────────────────────────────────
 
+    function calcClosedPnl() {{
+        let total = 0;
+        for (const t of DATA.trades) {{
+            if (t.trade_type === 'exit' && t.entry_price && t.price) {{
+                const pnl = t.side === 'sell'
+                    ? (t.price - t.entry_price) * t.qty
+                    : (t.entry_price - t.price) * t.qty;
+                total += pnl;
+            }}
+        }}
+        return total;
+    }}
+
+    function calcOpenPnl() {{
+        let total = 0;
+        for (const p of DATA.positions) {{
+            const q = liveQuotes[p.symbol];
+            const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+            const pnl = p.side === 'short'
+                ? (p.entry_price - curPrice) * Math.abs(p.qty)
+                : (curPrice - p.entry_price) * Math.abs(p.qty);
+            total += pnl;
+        }}
+        return total;
+    }}
+
     function renderMetrics() {{
         const m = DATA.metrics;
         const a = DATA.account;
         const pv = livePortfolioValue();
         const dayPnl = calculateDayPnl();
+        const openPnl = calcOpenPnl();
+        const closedPnl = calcClosedPnl();
+        const totalPnl = pv - INITIAL_CAPITAL;
 
         const cards = [
             {{ label: 'Portfolio Value', value: fmtD(pv), cls: '' }},
             {{ label: 'Cash', value: fmtD(a.cash), cls: '' }},
-            {{ label: 'Total P&L', value: fmtD(pv - INITIAL_CAPITAL), cls: cls(pv - INITIAL_CAPITAL) }},
-            {{ label: 'Total Return', value: fmtP(((pv - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100), cls: cls(pv - INITIAL_CAPITAL) }},
+            {{ label: 'Total P&L', value: fmtD(totalPnl), cls: cls(totalPnl) }},
+            {{ label: 'Open P&L', value: fmtD(openPnl), cls: cls(openPnl) }},
+            {{ label: 'Closed P&L', value: fmtD(closedPnl), cls: cls(closedPnl) }},
+            {{ label: 'Total Return', value: fmtP((totalPnl / INITIAL_CAPITAL) * 100), cls: cls(totalPnl) }},
+            {{ label: 'Day P&L', value: fmtD(dayPnl), cls: cls(dayPnl) }},
             {{ label: 'Open Positions', value: DATA.positions.length, cls: '' }},
-            {{ label: 'Trades Executed', value: m.total_trades, cls: '' }},
         ];
 
         document.getElementById('metrics-grid').innerHTML = cards.map(c => `
@@ -835,6 +873,17 @@ class DashboardGenerator:
                 }}
             }}
 
+            // Entry date + days held
+            let entryDateStr = '—';
+            let daysHeld = '';
+            if (p.entry_date) {{
+                entryDateStr = p.entry_date;
+                const ed = new Date(p.entry_date + 'T00:00:00');
+                const now = new Date();
+                const diffDays = Math.floor((now - ed) / (1000 * 60 * 60 * 24));
+                daysHeld = `<div class="stock-name">${{diffDays}}d</div>`;
+            }}
+
             rows += `<tr>
                 <td>
                     <strong>${{p.symbol}}</strong>
@@ -843,6 +892,7 @@ class DashboardGenerator:
                 <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
                 <td>${{Math.abs(p.qty)}}</td>
                 <td>$${{fmt(p.entry_price)}}</td>
+                <td>${{entryDateStr}}${{daysHeld}}</td>
                 <td data-sym="${{p.symbol}}">
                     $${{fmt(curPrice)}}
                     ${{ahBadge}}
@@ -859,13 +909,13 @@ class DashboardGenerator:
             <table>
                 <thead><tr>
                     <th>Symbol</th><th>Side</th><th>Qty</th>
-                    <th>Entry</th><th>Current</th>
+                    <th>Entry</th><th>Entered</th><th>Current</th>
                     <th>P&amp;L</th><th>P&amp;L %</th><th>Day Chg</th>
                     <th>Mkt Value</th><th>% Port</th>
                 </tr></thead>
                 <tbody>${{rows}}</tbody>
                 <tfoot><tr>
-                    <td colspan="5" style="text-align:right;font-weight:600;">Totals</td>
+                    <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
                     <td class="${{cls(totalPnl)}}" style="font-weight:600;">$${{fmt(totalPnl)}}</td>
                     <td></td>
                     <td></td>
@@ -1040,13 +1090,36 @@ class DashboardGenerator:
             </table>`;
     }}
 
+    let currentTradeFilter = 'all';
+
+    function setTradeFilter(filter) {{
+        currentTradeFilter = filter;
+        document.querySelectorAll('#trades-filter-toggle .toggle-btn').forEach(b => {{
+            b.classList.toggle('active', b.dataset.filter === filter);
+        }});
+        renderTrades();
+    }}
+
     function renderTrades() {{
-        const trades = DATA.trades;
+        let trades = DATA.trades;
         if (!trades.length) {{
             document.getElementById('trades-table').innerHTML =
                 '<p class="muted">No trades yet</p>';
             return;
         }}
+
+        // Apply filter
+        if (currentTradeFilter !== 'all') {{
+            trades = trades.filter(t => t.trade_type === currentTradeFilter);
+        }}
+
+        if (!trades.length) {{
+            const label = currentTradeFilter === 'entry' ? 'entries' : 'exits';
+            document.getElementById('trades-table').innerHTML =
+                `<p class="muted">No ${{label}} yet</p>`;
+            return;
+        }}
+
         let rows = trades.map(t => {{
             const isExit = t.trade_type === 'exit';
             const typeLabel = isExit ? 'EXIT' : 'ENTRY';
