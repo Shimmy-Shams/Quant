@@ -879,7 +879,6 @@ class DashboardGenerator:
                 <td><span class="badge badge-${{p.side}}">${{p.side.toUpperCase()}}</span></td>
                 <td>${{Math.abs(p.qty)}}</td>
                 <td>$${{fmt(p.entry_price)}}</td>
-                <td>${{entryDateStr}}${{daysHeld}}</td>
                 <td data-sym="${{p.symbol}}">
                     $${{fmt(curPrice)}}
                     ${{ahBadge}}
@@ -889,6 +888,7 @@ class DashboardGenerator:
                 <td class="${{dayChangePct != null ? cls(dayChangePct) : ''}}">${{dayChangePct != null ? fmtP(dayChangePct) : '—'}}</td>
                 <td>$${{fmt(mktVal)}}</td>
                 <td>${{fmt(pctOfPortfolio, 1)}}%</td>
+                <td>${{entryDateStr}}${{daysHeld}}</td>
             </tr>`;
         }}
 
@@ -896,18 +896,19 @@ class DashboardGenerator:
             <table>
                 <thead><tr>
                     <th>Symbol</th><th>Side</th><th>Qty</th>
-                    <th>Entry</th><th>Entered</th><th>Current</th>
+                    <th>Entry</th><th>Current</th>
                     <th>P&amp;L</th><th>P&amp;L %</th><th>Day Chg</th>
-                    <th>Mkt Value</th><th>% Port</th>
+                    <th>Mkt Value</th><th>% Port</th><th>Entered</th>
                 </tr></thead>
                 <tbody>${{rows}}</tbody>
                 <tfoot><tr>
-                    <td colspan="6" style="text-align:right;font-weight:600;">Totals</td>
+                    <td colspan="5" style="text-align:right;font-weight:600;">Totals</td>
                     <td class="${{cls(totalPnl)}}" style="font-weight:600;">$${{fmt(totalPnl)}}</td>
                     <td></td>
                     <td></td>
                     <td style="font-weight:600;">$${{fmt(totalMktVal)}}</td>
                     <td style="font-weight:600;">${{fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}}%</td>
+                    <td></td>
                 </tr></tfoot>
             </table>`;
     }}
