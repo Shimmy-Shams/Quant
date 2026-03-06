@@ -134,9 +134,35 @@ print('Generated' if ok else 'FAILED')
 PYEOF
     ok "Dashboard HTML generated"
 
-    info "Pushing to GitHub Pages..."
-    vm_trader 'git add docs/index.html && git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null && git push origin main 2>&1 && git push origin main:dashboard-live 2>&1 || echo "No changes to push"' | tail -5
-    ok "Dashboard deployed"
+    info "Pushing to GitHub Pages (orphan branch)..."
+    # Push to main first
+    vm_trader 'git add docs/index.html && git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null && git push origin main 2>&1 || echo "No main changes"' | tail -3
+
+    # Then update dashboard-live orphan branch with only docs + data/snapshots
+    vm_trader 'bash -s' <<'DASHEOF'
+set -e
+cp docs/index.html /tmp/_dash_index.html
+for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
+    [ -f "data/snapshots/$f" ] && cp "data/snapshots/$f" "/tmp/_dash_$f"
+done
+git stash --include-untracked 2>/dev/null || true
+git fetch origin dashboard-live 2>/dev/null && git checkout dashboard-live && git reset --hard origin/dashboard-live || {
+    git checkout --orphan dashboard-live; git reset --hard;
+}
+mkdir -p docs data/snapshots
+cp /tmp/_dash_index.html docs/index.html
+touch docs/.nojekyll
+for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
+    [ -f "/tmp/_dash_$f" ] && cp "/tmp/_dash_$f" "data/snapshots/$f"
+done
+git add docs/ data/
+git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null || true
+git push origin dashboard-live --force 2>&1 || echo "Push failed"
+git checkout -f main
+git stash pop 2>/dev/null || true
+rm -f /tmp/_dash_*.html /tmp/_dash_*.json
+DASHEOF
+    ok "Dashboard deployed (clean orphan branch)"
     echo ""
     echo "  View: https://shimmy-shams.github.io/Quant/"
 }
