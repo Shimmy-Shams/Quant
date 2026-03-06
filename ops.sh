@@ -135,7 +135,7 @@ PYEOF
     ok "Dashboard HTML generated"
 
     info "Pushing to GitHub Pages..."
-    vm_trader 'git add docs/index.html && git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null && git push origin main 2>&1 || echo "No changes to push"' | tail -3
+    vm_trader 'git add docs/index.html && git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null && git push origin main 2>&1 && git push origin main:dashboard-live 2>&1 || echo "No changes to push"' | tail -5
     ok "Dashboard deployed"
     echo ""
     echo "  View: https://shimmy-shams.github.io/Quant/"

@@ -715,19 +715,6 @@ class DashboardGenerator:
 
     // ── Render helpers ────────────────────────────────────────────────────
 
-    function calcClosedPnl() {{
-        let total = 0;
-        for (const t of DATA.trades) {{
-            if (t.trade_type === 'exit' && t.entry_price && t.price) {{
-                const pnl = t.side === 'sell'
-                    ? (t.price - t.entry_price) * t.qty
-                    : (t.entry_price - t.price) * t.qty;
-                total += pnl;
-            }}
-        }}
-        return total;
-    }}
-
     function calcOpenPnl() {{
         let total = 0;
         for (const p of DATA.positions) {{
@@ -747,7 +734,8 @@ class DashboardGenerator:
         const pv = livePortfolioValue();
         const dayPnl = calculateDayPnl();
         const openPnl = calcOpenPnl();
-        const closedPnl = calcClosedPnl();
+        const totalPnl = pv - INITIAL_CAPITAL;
+        const closedPnl = totalPnl - openPnl;
         const totalPnl = pv - INITIAL_CAPITAL;
 
         const cards = [
