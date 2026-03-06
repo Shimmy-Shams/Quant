@@ -1,0 +1,406 @@
+{
+  "timestamp": "2026-03-06T18:08:17.640909",
+  "mode": "live",
+  "account": {
+    "equity": 1015508.99,
+    "cash": 99778.73,
+    "portfolio_value": 1015508.99,
+    "buying_power": 1115287.72
+  },
+  "positions": [
+    {
+      "symbol": "ADBE",
+      "qty": 596.0,
+      "side": "long",
+      "entry_price": 255.254916,
+      "current_price": 278.48,
+      "market_value": 165974.08,
+      "unrealized_pl": 13842.150064,
+      "unrealized_plpc": 9.099,
+      "entry_date": "2026-02-24"
+    },
+    {
+      "symbol": "CRM",
+      "qty": 760.0,
+      "side": "long",
+      "entry_price": 201.032343,
+      "current_price": 199.41,
+      "market_value": 151551.6,
+      "unrealized_pl": -1232.98068,
+      "unrealized_plpc": -0.807,
+      "entry_date": "2026-03-06"
+    },
+    {
+      "symbol": "CVS",
+      "qty": 1885.0,
+      "side": "long",
+      "entry_price": 80.33,
+      "current_price": 77.975,
+      "market_value": 146982.875,
+      "unrealized_pl": -4439.175,
+      "unrealized_plpc": -2.932,
+      "entry_date": "2026-03-02"
+    },
+    {
+      "symbol": "INTU",
+      "qty": 323.0,
+      "side": "long",
+      "entry_price": 471.304954,
+      "current_price": 465.74,
+      "market_value": 150434.02,
+      "unrealized_pl": -1797.480142,
+      "unrealized_plpc": -1.1809999999999998,
+      "entry_date": "2026-03-06"
+    },
+    {
+      "symbol": "RYAN",
+      "qty": 3775.0,
+      "side": "long",
+      "entry_price": 38.73,
+      "current_price": 39.12,
+      "market_value": 147678.0,
+      "unrealized_pl": 1472.25,
+      "unrealized_plpc": 1.0070000000000001,
+      "entry_date": "2026-02-24"
+    },
+    {
+      "symbol": "TENB",
+      "qty": 7284.0,
+      "side": "long",
+      "entry_price": 21.14,
+      "current_price": 21.02,
+      "market_value": 153109.68,
+      "unrealized_pl": -874.08,
+      "unrealized_plpc": -0.5680000000000001,
+      "entry_date": "2026-03-06"
+    }
+  ],
+  "recent_trades": [
+    {
+      "symbol": "TENB",
+      "side": "buy",
+      "qty": 7284.0,
+      "filled_price": 21.14,
+      "submitted_at": "2026-03-06 14:35:42.801011+00:00",
+      "order_id": "e1834e2a-df23-4894-b7dd-fe450005fed2",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "CRM",
+      "side": "buy",
+      "qty": 760.0,
+      "filled_price": 201.032343,
+      "submitted_at": "2026-03-06 14:35:36.286235+00:00",
+      "order_id": "d880e39c-324b-4f96-82b0-0a44c8821b44",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "INTU",
+      "side": "buy",
+      "qty": 323.0,
+      "filled_price": 471.304954,
+      "submitted_at": "2026-03-06 14:35:32.058052+00:00",
+      "order_id": "f495d7cf-b84d-4c86-8bd1-73f4370b16e8",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "VSEC",
+      "side": "buy",
+      "qty": 662.0,
+      "filled_price": 213.71,
+      "submitted_at": "2026-03-06 14:35:25.744321+00:00",
+      "order_id": "b2401ead-d636-496e-9e8a-d64a6bbffcc8",
+      "order_type": "limit",
+      "trade_type": "exit",
+      "entry_price": 222.57,
+      "pnl_pct": 3.98
+    },
+    {
+      "symbol": "INTU",
+      "side": "sell",
+      "qty": 332.0,
+      "filled_price": 472.981295,
+      "submitted_at": "2026-03-06 14:35:17.511999+00:00",
+      "order_id": "2695bcd9-a31d-4f52-aae3-289cbfc52b42",
+      "order_type": "limit",
+      "trade_type": "exit",
+      "entry_price": 461.34,
+      "pnl_pct": 2.52
+    },
+    {
+      "symbol": "ABNB",
+      "side": "sell",
+      "qty": 1138.0,
+      "filled_price": 132.672452,
+      "submitted_at": "2026-03-06 14:35:06.531079+00:00",
+      "order_id": "419f43f1-89ca-49ae-863e-63808f883420",
+      "order_type": "limit",
+      "trade_type": "exit",
+      "entry_price": 134.61,
+      "pnl_pct": -1.44
+    },
+    {
+      "symbol": "ABNB",
+      "side": "buy",
+      "qty": 1138.0,
+      "filled_price": 134.61,
+      "submitted_at": "2026-03-05 16:11:27.219167+00:00",
+      "order_id": "f6290e76-f7b2-4c13-ac07-e8591495e73b",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "INTU",
+      "side": "buy",
+      "qty": 332.0,
+      "filled_price": 461.34,
+      "submitted_at": "2026-03-05 16:11:26.052919+00:00",
+      "order_id": "8bbbc0e2-6646-4739-99a6-ec78e0fc01ef",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "AGM",
+      "side": "sell",
+      "qty": 957.0,
+      "filled_price": 162.08,
+      "submitted_at": "2026-03-05 16:07:45.167334+00:00",
+      "order_id": "e8a339ee-9394-45c1-97d1-854ef415d630",
+      "order_type": "limit",
+      "trade_type": "exit",
+      "entry_price": 157.37,
+      "pnl_pct": 2.99
+    },
+    {
+      "symbol": "ABNB",
+      "side": "sell",
+      "qty": 1130.0,
+      "filled_price": 134.96,
+      "submitted_at": "2026-03-05 16:07:43.446626+00:00",
+      "order_id": "e7d21779-004b-4b33-b4f9-858cd737ee81",
+      "order_type": "limit",
+      "trade_type": "exit",
+      "entry_price": 136.24,
+      "pnl_pct": -0.94
+    },
+    {
+      "symbol": "ABNB",
+      "side": "buy",
+      "qty": 1130.0,
+      "filled_price": 136.24,
+      "submitted_at": "2026-03-05 14:35:36.274479+00:00",
+      "order_id": "2bf755ee-1fea-42c1-9b46-1641a2ae9e57",
+      "order_type": "limit",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "AGM",
+      "side": "buy",
+      "qty": 957.0,
+      "filled_price": 157.37,
+      "submitted_at": "2026-03-02 14:50:46.909104+00:00",
+      "order_id": "b50a0f72-fcf5-4803-bff7-fa4e7c9ac310",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "CVS",
+      "side": "buy",
+      "qty": 1885.0,
+      "filled_price": 80.33,
+      "submitted_at": "2026-03-02 14:50:42.744710+00:00",
+      "order_id": "97d83554-0d62-4097-afc8-120dbce66b92",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "LOW",
+      "side": "buy",
+      "qty": 536.0,
+      "filled_price": 258.19,
+      "submitted_at": "2026-03-02 14:50:42.652933+00:00",
+      "order_id": "7790b8e9-f8c5-4dc5-9617-d4d203932b7e",
+      "order_type": "market",
+      "trade_type": "exit",
+      "entry_price": 277.97,
+      "pnl_pct": 7.12
+    },
+    {
+      "symbol": "DY",
+      "side": "buy",
+      "qty": 357.0,
+      "filled_price": 419.15,
+      "submitted_at": "2026-03-02 14:50:40.922232+00:00",
+      "order_id": "940a65a9-2614-411a-be86-27c5b571d774",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "VSEC",
+      "side": "sell",
+      "qty": 662.0,
+      "filled_price": 222.57,
+      "submitted_at": "2026-03-02 14:35:08.808896+00:00",
+      "order_id": "2e5c94cb-6bce-4a74-9ad2-3acc54e50478",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "PATK",
+      "side": "buy",
+      "qty": 1132.0,
+      "filled_price": 128.5,
+      "submitted_at": "2026-02-25 20:55:27.849239+00:00",
+      "order_id": "5eaf0bba-6374-4882-a6b7-be62797229c0",
+      "order_type": "market",
+      "trade_type": "exit",
+      "entry_price": 129.5,
+      "pnl_pct": 0.77
+    },
+    {
+      "symbol": "MCHP",
+      "side": "buy",
+      "qty": 1921.0,
+      "filled_price": 75.59,
+      "submitted_at": "2026-02-25 20:55:27.595189+00:00",
+      "order_id": "459bdbc2-2bd5-49ed-9640-f37d1770d02c",
+      "order_type": "market",
+      "trade_type": "exit",
+      "entry_price": 76.126277,
+      "pnl_pct": 0.7
+    },
+    {
+      "symbol": "ADBE",
+      "side": "buy",
+      "qty": 596.0,
+      "filled_price": 255.254917,
+      "submitted_at": "2026-02-24 20:55:29.135516+00:00",
+      "order_id": "b56041d1-c1c3-44e9-8d35-82d233bacd25",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "MCHP",
+      "side": "sell",
+      "qty": 1921.0,
+      "filled_price": 76.126277,
+      "submitted_at": "2026-02-24 20:55:28.837219+00:00",
+      "order_id": "68ed6e82-cd2d-4895-a49e-9947d6b26b5e",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "RYAN",
+      "side": "buy",
+      "qty": 3775.0,
+      "filled_price": 38.73,
+      "submitted_at": "2026-02-24 20:55:28.608009+00:00",
+      "order_id": "b46ce03f-9491-4328-8f6d-a4d944389088",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "PATK",
+      "side": "sell",
+      "qty": 1132.0,
+      "filled_price": 129.5,
+      "submitted_at": "2026-02-24 20:55:28.424137+00:00",
+      "order_id": "d45b63c7-7ae4-493b-8ee0-ae128222fa1b",
+      "order_type": "market",
+      "trade_type": "entry"
+    },
+    {
+      "symbol": "LOW",
+      "side": "sell",
+      "qty": 536.0,
+      "filled_price": 277.97,
+      "submitted_at": "2026-02-24 20:55:28.389566+00:00",
+      "order_id": "22c56b21-7308-4a65-adbe-3f0f8eff14fe",
+      "order_type": "market",
+      "trade_type": "entry"
+    }
+  ],
+  "open_orders": [
+    {
+      "symbol": "TENB",
+      "side": "sell",
+      "qty": 7284.0,
+      "type": "stop",
+      "stop_price": 18.6,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-03-06 14:35:44",
+      "order_id": "dc8221ae-51fd-4f38-8bb2-b7c241b50769"
+    },
+    {
+      "symbol": "CRM",
+      "side": "sell",
+      "qty": 760.0,
+      "type": "stop",
+      "stop_price": 176.91,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-03-06 14:35:42",
+      "order_id": "82bcf3ab-999d-417c-92fb-3c745bdb3378"
+    },
+    {
+      "symbol": "INTU",
+      "side": "sell",
+      "qty": 323.0,
+      "type": "stop",
+      "stop_price": 414.75,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-03-06 14:35:36",
+      "order_id": "9c9b12a3-de7b-48d5-9653-6cde7d1ca02c"
+    },
+    {
+      "symbol": "CVS",
+      "side": "sell",
+      "qty": 1885.0,
+      "type": "stop",
+      "stop_price": 70.69,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-03-02 14:50:46",
+      "order_id": "1aa4f2d8-b85c-43ff-b359-006601d9954f"
+    },
+    {
+      "symbol": "RYAN",
+      "side": "sell",
+      "qty": 3775.0,
+      "type": "stop",
+      "stop_price": 34.86,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-02-25 15:22:46",
+      "order_id": "c02e1e3f-c59e-4baa-9c53-d5134a4c47e6"
+    },
+    {
+      "symbol": "ADBE",
+      "side": "sell",
+      "qty": 596.0,
+      "type": "stop",
+      "stop_price": 229.73,
+      "limit_price": null,
+      "order_class": "simple",
+      "time_in_force": "gtc",
+      "status": "new",
+      "submitted_at": "2026-02-25 15:22:46",
+      "order_id": "4079c330-cd7c-4795-a0dc-91a055659deb"
+    }
+  ]
+}
