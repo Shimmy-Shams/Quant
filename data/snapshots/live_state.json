@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-03-06T18:08:17.640909",
+  "timestamp": "2026-03-06T21:10:25.635535",
   "mode": "live",
   "account": {
-    "equity": 1015508.99,
+    "equity": 1027513.57,
     "cash": 99778.73,
-    "portfolio_value": 1015508.99,
-    "buying_power": 1115287.72
+    "portfolio_value": 1027513.57,
+    "buying_power": 1127292.3
   },
   "positions": [
     {
@@ -13,10 +13,10 @@
       "qty": 596.0,
       "side": "long",
       "entry_price": 255.254916,
-      "current_price": 278.48,
-      "market_value": 165974.08,
-      "unrealized_pl": 13842.150064,
-      "unrealized_plpc": 9.099,
+      "current_price": 283.58,
+      "market_value": 169013.68,
+      "unrealized_pl": 16881.750064,
+      "unrealized_plpc": 11.097,
       "entry_date": "2026-02-24"
     },
     {
@@ -24,10 +24,10 @@
       "qty": 760.0,
       "side": "long",
       "entry_price": 201.032343,
-      "current_price": 199.41,
-      "market_value": 151551.6,
-      "unrealized_pl": -1232.98068,
-      "unrealized_plpc": -0.807,
+      "current_price": 202.11,
+      "market_value": 153603.6,
+      "unrealized_pl": 819.01932,
+      "unrealized_plpc": 0.536,
       "entry_date": "2026-03-06"
     },
     {
@@ -35,10 +35,10 @@
       "qty": 1885.0,
       "side": "long",
       "entry_price": 80.33,
-      "current_price": 77.975,
-      "market_value": 146982.875,
-      "unrealized_pl": -4439.175,
-      "unrealized_plpc": -2.932,
+      "current_price": 77.92,
+      "market_value": 146879.2,
+      "unrealized_pl": -4542.85,
+      "unrealized_plpc": -3.0,
       "entry_date": "2026-03-02"
     },
     {
@@ -46,10 +46,10 @@
       "qty": 323.0,
       "side": "long",
       "entry_price": 471.304954,
-      "current_price": 465.74,
-      "market_value": 150434.02,
-      "unrealized_pl": -1797.480142,
-      "unrealized_plpc": -1.1809999999999998,
+      "current_price": 480.0,
+      "market_value": 155040.0,
+      "unrealized_pl": 2808.499858,
+      "unrealized_plpc": 1.8450000000000002,
       "entry_date": "2026-03-06"
     },
     {
@@ -57,10 +57,10 @@
       "qty": 3775.0,
       "side": "long",
       "entry_price": 38.73,
-      "current_price": 39.12,
-      "market_value": 147678.0,
-      "unrealized_pl": 1472.25,
-      "unrealized_plpc": 1.0070000000000001,
+      "current_price": 39.72,
+      "market_value": 149943.0,
+      "unrealized_pl": 3737.25,
+      "unrealized_plpc": 2.556,
       "entry_date": "2026-02-24"
     },
     {
@@ -68,10 +68,10 @@
       "qty": 7284.0,
       "side": "long",
       "entry_price": 21.14,
-      "current_price": 21.02,
-      "market_value": 153109.68,
-      "unrealized_pl": -874.08,
-      "unrealized_plpc": -0.5680000000000001,
+      "current_price": 21.04,
+      "market_value": 153255.36,
+      "unrealized_pl": -728.4,
+      "unrealized_plpc": -0.473,
       "entry_date": "2026-03-06"
     }
   ],

@@ -262,5 +262,23 @@
         "price": 51.99
       }
     ]
+  },
+  {
+    "date": "2026-03-06",
+    "generated_at": "2026-03-06T21:10:24",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 94,
+    "actionable_count": 1,
+    "signals": [
+      {
+        "symbol": "QTWO",
+        "direction": "LONG",
+        "signal": -2.2822,
+        "z_score": 2.5644,
+        "price": 52.86
+      }
+    ]
   }
 ]
