@@ -149,13 +149,18 @@ git stash --include-untracked 2>/dev/null || true
 git fetch origin dashboard-live 2>/dev/null && git checkout dashboard-live && git reset --hard origin/dashboard-live || {
     git checkout --orphan dashboard-live; git reset --hard;
 }
+# Remove ALL untracked files so only orphan-tracked files remain
+git clean -fdx
 mkdir -p docs data/snapshots
 cp /tmp/_dash_index.html docs/index.html
 touch docs/.nojekyll
 for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
     [ -f "/tmp/_dash_$f" ] && cp "/tmp/_dash_$f" "data/snapshots/$f"
 done
-git add docs/ data/
+git add docs/index.html docs/.nojekyll
+for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
+    [ -f "data/snapshots/$f" ] && git add "data/snapshots/$f"
+done
 git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null || true
 git push origin dashboard-live --force 2>&1 || echo "Push failed"
 git checkout -f main
