@@ -1638,83 +1638,88 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                     if fpath.exists():
                         data_snapshots[fname] = fpath.read_text()
                 
-                # Push to dashboard-live branch (keeps main clean)
+                # Push to dashboard-live branch using temp directory
+                # (never switches branches in the main working tree)
+                import tempfile, shutil
+                
                 def _git(*args, **kw):
                     return subprocess.run(
-                        ["git", "-C", str(PROJECT_ROOT)] + list(args),
+                        ["git"] + list(args),
                         capture_output=True, timeout=kw.get("timeout", 15),
                     )
 
-                def _ensure_main_branch():
-                    """Force-switch back to main branch — always succeeds."""
-                    try:
-                        _git("checkout", "-f", "main")
-                        # Try to pop stash; ignore if empty or conflicts
-                        pop = _git("stash", "pop")
-                        if pop.returncode != 0:
-                            stderr = pop.stderr.decode().strip()
-                            if "No stash entries" not in stderr:
-                                logger.debug(f"Stash pop skipped: {stderr}")
-                                _git("stash", "drop")
-                    except Exception as e:
-                        logger.warning(f"Branch recovery error: {e}")
-
+                tmpdir = None
                 try:
-                    # Stash any working changes, switch to dashboard-live
-                    _git("stash", "--include-untracked")
+                    tmpdir = tempfile.mkdtemp(prefix="dash_push_")
                     
-                    # Ensure dashboard-live branch exists locally
-                    fetch_result = _git("fetch", "origin", "dashboard-live", timeout=30)
-                    if fetch_result.returncode == 0:
-                        _git("checkout", "dashboard-live")
-                        _git("reset", "--hard", "origin/dashboard-live")
-                    else:
-                        # Branch doesn't exist yet — create orphan
-                        _git("checkout", "--orphan", "dashboard-live")
-                        _git("reset", "--hard")
+                    # Write files into temp directory
+                    docs_dir = Path(tmpdir) / "docs"
+                    docs_dir.mkdir()
+                    (docs_dir / "index.html").write_text(dashboard_html)
+                    (docs_dir / ".nojekyll").write_text("")
                     
-                    # Write dashboard HTML
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text(dashboard_html)
-                    _git("add", "docs/index.html")
-
-                    # Write data snapshots (signal/trade history for dev access)
-                    data_dir = PROJECT_ROOT / "data" / "snapshots"
-                    data_dir.mkdir(parents=True, exist_ok=True)
+                    snap_dir = Path(tmpdir) / "data" / "snapshots"
+                    snap_dir.mkdir(parents=True)
                     for fname, content in data_snapshots.items():
-                        (data_dir / fname).write_text(content)
-                        _git("add", f"data/snapshots/{fname}")
+                        (snap_dir / fname).write_text(content)
                     
+                    # Build orphan commit using a temp index + bare ops
+                    env = {
+                        **subprocess.os.environ,
+                        "GIT_DIR": str(PROJECT_ROOT / ".git"),
+                        "GIT_WORK_TREE": tmpdir,
+                        "GIT_INDEX_FILE": str(Path(tmpdir) / "_index"),
+                    }
+                    
+                    def _tgit(*args, **kw):
+                        return subprocess.run(
+                            ["git"] + list(args),
+                            capture_output=True, env=env,
+                            timeout=kw.get("timeout", 15),
+                        )
+                    
+                    _tgit("add", "docs/", "data/")
+                    tree_result = _tgit("write-tree")
+                    if tree_result.returncode != 0:
+                        logger.warning(f"write-tree failed: {tree_result.stderr.decode()}")
+                        return
+                    
+                    tree_sha = tree_result.stdout.decode().strip()
                     commit_msg = f"Update dashboard {datetime.now():%Y-%m-%d %H:%M}"
-                    result = _git("commit", "-m", commit_msg)
+                    commit_result = subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "commit-tree", tree_sha,
+                         "-m", commit_msg],
+                        capture_output=True, timeout=15,
+                    )
+                    if commit_result.returncode != 0:
+                        logger.warning(f"commit-tree failed: {commit_result.stderr.decode()}")
+                        return
                     
-                    if result.returncode == 0:
-                        push_result = _git("push", "origin", "dashboard-live", "--force", timeout=30)
-                        if push_result.returncode == 0:
-                            n_data = len(data_snapshots)
-                            logger.info(f"Dashboard + {n_data} data files pushed to GitHub (dashboard-live branch)")
-                        else:
-                            logger.warning(f"Git push failed: {push_result.stderr.decode()}")
+                    commit_sha = commit_result.stdout.decode().strip()
+                    subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "update-ref",
+                         "refs/heads/dashboard-live", commit_sha],
+                        capture_output=True, timeout=15,
+                    )
+                    
+                    push_result = subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "push", "origin",
+                         "dashboard-live", "--force"],
+                        capture_output=True, timeout=30,
+                    )
+                    if push_result.returncode == 0:
+                        n_data = len(data_snapshots)
+                        logger.info(f"Dashboard + {n_data} data files pushed to GitHub (dashboard-live branch)")
                     else:
-                        logger.info("No dashboard changes to commit")
+                        logger.warning(f"Git push failed: {push_result.stderr.decode()}")
                     
                 except subprocess.TimeoutExpired:
                     logger.warning("Git operation timed out")
                 except Exception as e:
                     logger.warning(f"Dashboard push failed: {e}")
                 finally:
-                    # ALWAYS force-switch back to main (even on failure)
-                    _ensure_main_branch()
-                    # Restore data files — checkout from dashboard-live
-                    # deletes them because they're tracked there but
-                    # gitignored on main
-                    for fname, content in data_snapshots.items():
-                        try:
-                            dest = snapshot_dir / fname
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                            dest.write_text(content)
-                        except Exception:
-                            pass
+                    if tmpdir and Path(tmpdir).exists():
+                        shutil.rmtree(tmpdir, ignore_errors=True)
         else:
             logger.warning("Dashboard generation failed")
             

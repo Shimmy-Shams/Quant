@@ -138,34 +138,45 @@ PYEOF
     # Push to main first
     vm_trader 'git add docs/index.html && git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null && git push origin main 2>&1 || echo "No main changes"' | tail -3
 
-    # Then update dashboard-live orphan branch with only docs + data/snapshots
+    # Then update dashboard-live orphan branch using a temp worktree (never touches main working tree)
     vm_trader 'bash -s' <<'DASHEOF'
 set -e
-cp docs/index.html /tmp/_dash_index.html
+TMPDIR=$(mktemp -d)
+
+# Copy only the files we want on dashboard-live
+mkdir -p "$TMPDIR/docs" "$TMPDIR/data/snapshots"
+cp docs/index.html "$TMPDIR/docs/"
+touch "$TMPDIR/docs/.nojekyll"
 for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
-    [ -f "data/snapshots/$f" ] && cp "data/snapshots/$f" "/tmp/_dash_$f"
+    [ -f "data/snapshots/$f" ] && cp "data/snapshots/$f" "$TMPDIR/data/snapshots/$f"
 done
-git stash --include-untracked 2>/dev/null || true
-git fetch origin dashboard-live 2>/dev/null && git checkout dashboard-live && git reset --hard origin/dashboard-live || {
-    git checkout --orphan dashboard-live; git reset --hard;
-}
-# Remove ALL untracked files so only orphan-tracked files remain
-git clean -fdx
-mkdir -p docs data/snapshots
-cp /tmp/_dash_index.html docs/index.html
-touch docs/.nojekyll
-for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
-    [ -f "/tmp/_dash_$f" ] && cp "/tmp/_dash_$f" "data/snapshots/$f"
+
+# Clone bare into temp, build orphan commit, push
+BARE="$TMPDIR/_bare"
+git clone --bare --single-branch --branch main . "$BARE" 2>/dev/null
+cd "$TMPDIR"
+
+# Build a tree from the files
+export GIT_DIR="$BARE"
+TREE=$(git -C "$BARE" mktree </dev/null)
+for f in $(find docs data -type f 2>/dev/null); do
+    BLOB=$(git -C "$BARE" hash-object -w "$TMPDIR/$f")
+    TREE=$(echo -e "$(git -C "$BARE" ls-tree "$TREE")\n100644 blob $BLOB\t$f" | git -C "$BARE" mktree)
 done
-git add docs/index.html docs/.nojekyll
-for f in signal_history.json trade_history.json live_state.json equity_history.json intraday_equity.json; do
-    [ -f "data/snapshots/$f" ] && git add "data/snapshots/$f"
-done
-git commit -m "Dashboard update $(date +%Y-%m-%d\ %H:%M)" 2>/dev/null || true
+
+# Simpler: use a temp index
+export GIT_DIR="$BARE"
+export GIT_WORK_TREE="$TMPDIR"
+export GIT_INDEX_FILE="$TMPDIR/_index"
+
+git add docs/ data/
+TREE=$(git write-tree)
+COMMIT=$(echo "Dashboard update $(date '+%Y-%m-%d %H:%M')" | git commit-tree "$TREE")
+git update-ref refs/heads/dashboard-live "$COMMIT"
 git push origin dashboard-live --force 2>&1 || echo "Push failed"
-git checkout -f main
-git stash pop 2>/dev/null || true
-rm -f /tmp/_dash_*.html /tmp/_dash_*.json
+
+cd /home/trader/Quant
+rm -rf "$TMPDIR"
 DASHEOF
     ok "Dashboard deployed (clean orphan branch)"
     echo ""
