@@ -616,6 +616,32 @@ class AlpacaExecutor:
         # Symbols that are being exited today
         exiting_symbols = {d.symbol for d in decisions}
 
+        # ─── HOLD-THROUGH: Suppress signal exits that would immediately re-enter ──
+        if getattr(config, 'hold_through_enabled', True):
+            hold_through_symbols = set()
+            for d in decisions:
+                # Only suppress signal-based exits (not stop-loss, take-profit, etc.)
+                if not d.reason.startswith("Signal exit"):
+                    continue
+                sym = d.symbol
+                if sym not in today_signals.index:
+                    continue
+                sig = today_signals[sym]
+                if pd.isna(sig) or abs(sig) <= config.entry_threshold:
+                    continue
+                # Check same direction: hold only if re-entry is same side
+                pos_side = current_positions[sym].get('side', 'long')
+                entry_dir = 'long' if sig < 0 else 'short'
+                if pos_side == entry_dir:
+                    hold_through_symbols.add(sym)
+                    logger.info(
+                        f"🔄 HOLD-THROUGH: {sym} — suppressed signal exit "
+                        f"(re-entry signal={sig:.3f} same direction as {pos_side})"
+                    )
+            if hold_through_symbols:
+                decisions = [d for d in decisions if d.symbol not in hold_through_symbols]
+                exiting_symbols -= hold_through_symbols
+
         # Get portfolio equity for sizing and exposure limits
         if current_equity is not None:
             equity = current_equity
@@ -712,6 +738,25 @@ class AlpacaExecutor:
             price = today_prices.get(symbol, 0)
             if price <= 0:
                 continue
+
+            # Pre-market gap check: skip if price already moved favorably > threshold
+            _gap_thresh = getattr(config, 'gap_skip_threshold', 0.0)
+            if _gap_thresh > 0:
+                date_idx = price_df.index.get_loc(date)
+                if date_idx > 0:
+                    signal_price = price_df.iloc[date_idx - 1].get(symbol, 0)
+                    if signal_price > 0:
+                        gap_pct = (price - signal_price) / signal_price
+                        # BUY: favorable gap = price up (toward mean) → skip
+                        # SHORT: favorable gap = price down (toward mean) → skip
+                        if (action == 'buy' and gap_pct > _gap_thresh) or \
+                           (action == 'short' and gap_pct < -_gap_thresh):
+                            logger.info(
+                                f"⏭️ GAP SKIP: {symbol} — price gapped {gap_pct:+.1%} "
+                                f"(signal=${signal_price:.2f} → live=${price:.2f}), "
+                                f"threshold={_gap_thresh:.1%}"
+                            )
+                            continue
 
             # Short acceleration filter (matches backtest engine)
             if action == 'short' and getattr(config, 'short_accel_filter', False):

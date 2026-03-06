@@ -249,6 +249,12 @@ class ConfigLoader:
 
             # Execution price model
             execution_price=self.get('backtest.execution_price', 'close'),
+
+            # Hold-through (suppress signal exit when re-entry would occur)
+            hold_through_enabled=self.get('backtest.hold_through_enabled', True),
+
+            # Pre-market gap skip threshold (live mode only)
+            gap_skip_threshold=self.get('backtest.gap_skip_threshold', 0.0),
         )
 
     def to_optimization_config(self):

@@ -94,6 +94,12 @@ class BacktestConfig:
     # Execution price model: 'close' (default) or 'vwap'
     execution_price: str = 'close'
 
+    # Hold-through: suppress signal-based exits when re-entry would occur same day
+    hold_through_enabled: bool = True
+
+    # Pre-market gap skip: skip entries if price gapped favorably > threshold
+    gap_skip_threshold: float = 0.0  # 0 = disabled; 0.015 = skip if 1.5% favorable gap
+
     # Regime filter
     use_regime_filter: bool = True
     min_regime_multiplier: float = 0.5  # Don't trade if regime < this
@@ -789,6 +795,16 @@ class BacktestEngine:
                             exit_reason = 'time_decay'
 
                 # --- Execute exit ---
+                if should_exit:
+                    # Hold-through: suppress signal exits when re-entry would occur same direction
+                    if cfg.hold_through_enabled and exit_reason == 'signal':
+                        entry_sig = filt_signals[sym_idx]
+                        if np.isfinite(entry_sig) and abs(entry_sig) > cfg.entry_threshold:
+                            # Check same direction
+                            reentry_dir = 'long' if entry_sig < 0 else 'short'
+                            if side == reentry_dir:
+                                should_exit = False  # Hold through — skip exit
+
                 if should_exit:
                     shares_abs = abs(pos['shares'])
                     if side == 'long':

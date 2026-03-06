@@ -190,7 +190,8 @@ class TelegramNotifier:
             portfolio_value: Current portfolio value
             cash: Current cash
         """
-        filled = sum(1 for d in decisions_data if d.get("status") in ("filled", "submitted"))
+        _OK = ("filled", "submitted", "pending_new", "accepted")
+        filled = sum(1 for d in decisions_data if d.get("status") in _OK)
         total = len(decisions_data)
 
         header = (
@@ -203,7 +204,7 @@ class TelegramNotifier:
         else:
             body = f"Decisions: {total} | Filled: {filled}\n\n"
             for d in decisions_data:
-                status_icon = "[OK]" if d.get("status") in ("filled", "submitted") else "[FAIL]"
+                status_icon = "[OK]" if d.get("status") in _OK else "[FAIL]"
                 body += (
                     f"{status_icon} {d['action'].upper()} {d.get('qty', '?')} "
                     f"{d['symbol']}  @${d.get('price', 0):,.2f}\n"

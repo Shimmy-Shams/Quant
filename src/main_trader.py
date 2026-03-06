@@ -10,8 +10,8 @@ Architecture:
 
 Execution Timing (T+1 Open):
   Signals are generated from yesterday's close prices (fully settled overnight).
-  Trades execute at 9:35 AM ET (market open + 5 min) at current market prices.
-  This eliminates T+0 look-ahead bias while capturing most of the alpha.
+  Trades execute at 10:00 AM ET (market open + 30 min) at current market prices.
+  This eliminates T+0 look-ahead bias while avoiding opening volatility.
   (Validated: Sharpe 6.00 at T+1 Open vs 6.99 at T+0 Close — 14% decay)
 
 Modes:
@@ -407,7 +407,7 @@ def _save_shadow_state(sim: SimulationEngine) -> None:
 # SIGNAL CACHE (T+1 Two-Phase Architecture)
 #
 # Phase 1 (post-close ~4:10 PM): generate signals from Day T close → cache
-# Phase 2 (9:35 AM T+1): load cached signals → execute trades
+# Phase 2 (10:00 AM T+1): load cached signals → execute trades
 # ═══════════════════════════════════════════════════════════════════════════
 
 SIGNAL_CACHE_BASE = PROJECT_ROOT / "data" / "snapshots" / "signal_cache"
@@ -964,7 +964,7 @@ def run_trade_execution_phase(
     """
     Phase 2 (T+1 Open): Execute trades from cached signals.
 
-    Called at 9:35 AM ET. Uses pre-computed signals from last night's
+    Called at 10:00 AM ET. Uses pre-computed signals from last night's
     close data, combined with current position state and live prices.
 
     Returns summary dict.
@@ -1189,25 +1189,25 @@ def _seed_equity_history(conn: AlpacaConnection) -> None:
 
 
 def _post_trade_refresh(conn: AlpacaConnection, push: bool) -> None:
-    """Dashboard refresh at 10:00 AM ET — captures post-trade state after 9:35 AM execution."""
+    """Dashboard refresh at 10:25 AM ET — captures post-trade state after 10:00 AM execution."""
     import pytz
     et = pytz.timezone("US/Eastern")
     now_et = datetime.now(et)
 
-    target = now_et.replace(hour=10, minute=0, second=0, microsecond=0)
+    target = now_et.replace(hour=10, minute=25, second=0, microsecond=0)
 
     if now_et >= target:
-        logger.info("Already past 10:00 AM ET — skipping post-trade refresh")
+        logger.info("Already past 10:25 AM ET — skipping post-trade refresh")
         return
 
     wait_secs = (target - now_et).total_seconds()
     if wait_secs > 1800:  # >30 min — too early, skip
         logger.info(
-            f"Post-trade refresh: {wait_secs:.0f}s until 10:00 AM ET — too far, skipping"
+            f"Post-trade refresh: {wait_secs:.0f}s until 10:25 AM ET — too far, skipping"
         )
         return
 
-    logger.info(f"Post-trade refresh: waiting {wait_secs:.0f}s until 10:00 AM ET...")
+    logger.info(f"Post-trade refresh: waiting {wait_secs:.0f}s until 10:25 AM ET...")
     _interruptible_sleep(wait_secs)
 
     if SHUTDOWN_REQUESTED:
@@ -1514,22 +1514,22 @@ def is_market_day() -> bool:
 
 def seconds_until_execution_window() -> float:
     """
-    Seconds until 9:35 AM ET (market open + 5 min).
+    Seconds until 10:00 AM ET (market open + 30 min).
     
     T+1 Open execution: signals are generated from yesterday's close
-    prices (fully settled overnight), and trades execute at market open.
-    Running at 9:35 AM ensures the market is open and opening auction
-    has settled for reliable fills.
+    prices (fully settled overnight), and trades execute after the
+    opening auction has settled.  Running at 10:00 AM avoids the
+    opening 30-minute volatility window for more reliable fills.
     
-    Returns 0 if in the execution window (9:35–10:00 AM ET).
+    Returns 0 if in the execution window (10:00–10:30 AM ET).
     Returns positive if before the window.
     Returns negative if past the window.
     """
     import pytz
     et = pytz.timezone("US/Eastern")
     now_et = datetime.now(et)
-    exec_time = now_et.replace(hour=9, minute=35, second=0, microsecond=0)
-    window_end = now_et.replace(hour=10, minute=0, second=0, microsecond=0)
+    exec_time = now_et.replace(hour=10, minute=0, second=0, microsecond=0)
+    window_end = now_et.replace(hour=10, minute=30, second=0, microsecond=0)
 
     if exec_time <= now_et <= window_end:
         return 0  # In execution window
@@ -1541,13 +1541,14 @@ def seconds_until_execution_window() -> float:
 
 def wait_for_execution_window(interval_sec: int) -> None:
     """
-    Sleep until the execution window (9:35 AM ET — market open).
+    Sleep until the execution window (10:00 AM ET — market open + 30 min).
     
-    T+1 Open execution: by running at market open, yesterday's daily
-    bars are fully settled.  Signals computed from yesterday's close
-    are executed at today's opening prices, eliminating T+0 look-ahead.
+    T+1 Open execution: by running after the opening auction, yesterday's
+    daily bars are fully settled and opening volatility has subsided.
+    Signals computed from yesterday's close are executed at more stable
+    intraday prices, eliminating T+0 look-ahead.
     
-    - On market days: sleep until 9:35 AM ET
+    - On market days: sleep until 10:00 AM ET
     - On weekends/holidays: sleep then re-check
     """
     while not SHUTDOWN_REQUESTED:
@@ -1562,7 +1563,7 @@ def wait_for_execution_window(interval_sec: int) -> None:
         elif wait > 0:
             hours = wait / 3600
             if hours > 1:
-                logger.info(f"Execution window in {hours:.1f}h (9:35 AM ET) — sleeping...")
+                logger.info(f"Execution window in {hours:.1f}h (10:00 AM ET) — sleeping...")
             else:
                 logger.info(f"Execution window in {wait/60:.0f}min — sleeping...")
             _interruptible_sleep(min(wait, 3600))  # Re-log every hour
@@ -1948,8 +1949,8 @@ def main():
     # ── Main loop ──
     # Two-phase T+1 architecture:
     #   Phase 1 (post-close ~4:10 PM): Generate signals from Day T close → cache
-    #   Phase 2 (9:35 AM T+1): Load cached signals → execute trades
-    #   Between: Intraday monitor watches held positions (09:45–15:50)
+    #   Phase 2 (10:00 AM T+1): Load cached signals → execute trades
+    #   Between: Intraday monitor watches held positions (10:30–15:50)
     #
     # First run (no cache): skips execution, generates signals post-close.
     # Subsequent days: cached signals drive morning execution.
@@ -2007,7 +2008,7 @@ def main():
                 continue
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 2: Trade Execution (9:35 AM ET)
+            # PHASE 2: Trade Execution (10:00 AM ET)
             # Load cached signals from last night's post-close gen
             # ═══════════════════════════════════════════════════════
             exec_wait = seconds_until_execution_window()
@@ -2016,7 +2017,7 @@ def main():
                 # Before execution window → sleep until it opens
                 hours = exec_wait / 3600
                 if hours > 1:
-                    logger.info(f"Execution window in {hours:.1f}h (9:35 AM ET) — sleeping...")
+                    logger.info(f"Execution window in {hours:.1f}h (10:00 AM ET) — sleeping...")
                 else:
                     logger.info(f"Execution window in {exec_wait/60:.0f}min — sleeping...")
                 _interruptible_sleep(min(exec_wait, 3600))
@@ -2061,7 +2062,7 @@ def main():
                 last_trade_date = today
 
             # ═══════════════════════════════════════════════════════
-            # INTRADAY MONITOR (09:45–15:50 ET)
+            # INTRADAY MONITOR (10:30–15:50 ET)
             # Monitors held positions for dynamic exits
             # ═══════════════════════════════════════════════════════
             if monitor is not None:

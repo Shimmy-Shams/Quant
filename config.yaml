@@ -155,6 +155,14 @@ backtest:
   entry_threshold: 1.5      # WF consensus median (was 1.0; range 1.1-4.0 across 34 OOS periods)
   exit_threshold: 0.50       # WF consensus median (was 0.50; range 0.10-1.50)
 
+  # Hold-through: suppress signal-based exits when same-direction re-entry would occur
+  # Avoids costly sell-then-rebuy round-trips (e.g. INTU sold +2.5% then re-bought same day)
+  hold_through_enabled: true
+
+  # Pre-market gap skip: skip entries if overnight price gapped favorably > threshold
+  # Prevents chasing moves that already happened (e.g. stock up 2% overnight on a BUY signal)
+  gap_skip_threshold: 0.015   # 1.5% — skip if price moved 1.5%+ toward the mean overnight
+
   # Risk Management
   # PHASE A OPTIMIZATION: Enabled 8% stop to address avg loss > avg win issue
   stop_loss_pct: 0.12        # WF consensus numeric median 0.15 (mode=None; kept for safety)
