@@ -450,7 +450,7 @@ cmd_restore() {
     if [[ -z "$date" ]]; then
         header "AVAILABLE BACKUPS"
         info "Local backups on VM (/home/trader/backups/):"
-        vm_trader "ls -1 /home/trader/backups/ 2>/dev/null || echo '(none)'"
+        vm_trader "ls -1 /home/trader/backups/ 2>/dev/null || echo none"
         echo ""
         info "To restore: ./ops.sh restore YYYY-MM-DD"
         return
