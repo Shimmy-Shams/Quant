@@ -142,6 +142,7 @@ PYEOF
     vm_trader 'bash -s' <<'DASHEOF'
 set -e
 TMPDIR=$(mktemp -d)
+trap "rm -rf $TMPDIR" EXIT
 
 # Copy only the files we want on dashboard-live
 mkdir -p "$TMPDIR/docs" "$TMPDIR/data/snapshots"
@@ -151,32 +152,22 @@ for f in signal_history.json trade_history.json live_state.json equity_history.j
     [ -f "data/snapshots/$f" ] && cp "data/snapshots/$f" "$TMPDIR/data/snapshots/$f"
 done
 
-# Clone bare into temp, build orphan commit, push
-BARE="$TMPDIR/_bare"
-git clone --bare --single-branch --branch main . "$BARE" 2>/dev/null
-cd "$TMPDIR"
-
-# Build a tree from the files
-export GIT_DIR="$BARE"
-TREE=$(git -C "$BARE" mktree </dev/null)
-for f in $(find docs data -type f 2>/dev/null); do
-    BLOB=$(git -C "$BARE" hash-object -w "$TMPDIR/$f")
-    TREE=$(echo -e "$(git -C "$BARE" ls-tree "$TREE")\n100644 blob $BLOB\t$f" | git -C "$BARE" mktree)
-done
-
-# Simpler: use a temp index
-export GIT_DIR="$BARE"
-export GIT_WORK_TREE="$TMPDIR"
+# Use a temp index file to build the commit without switching branches
 export GIT_INDEX_FILE="$TMPDIR/_index"
 
-git add docs/ data/
+# Add only the files we copied
+for f in $(find "$TMPDIR/docs" "$TMPDIR/data" -type f 2>/dev/null); do
+    rel="${f#$TMPDIR/}"
+    BLOB=$(git hash-object -w "$f")
+    git update-index --add --cacheinfo 100644,"$BLOB","$rel"
+done
+
 TREE=$(git write-tree)
 COMMIT=$(echo "Dashboard update $(date '+%Y-%m-%d %H:%M')" | git commit-tree "$TREE")
 git update-ref refs/heads/dashboard-live "$COMMIT"
 git push origin dashboard-live --force 2>&1 || echo "Push failed"
 
-cd /home/trader/Quant
-rm -rf "$TMPDIR"
+unset GIT_INDEX_FILE
 DASHEOF
     ok "Dashboard deployed (clean orphan branch)"
     echo ""

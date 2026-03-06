@@ -1642,9 +1642,9 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                 # (never switches branches in the main working tree)
                 import tempfile, shutil
                 
-                def _git(*args, **kw):
+                def _git_cmd(*args, **kw):
                     return subprocess.run(
-                        ["git"] + list(args),
+                        ["git", "-C", str(PROJECT_ROOT)] + list(args),
                         capture_output=True, timeout=kw.get("timeout", 15),
                     )
 
@@ -1663,23 +1663,30 @@ def _generate_and_push_dashboard(auto_push: bool = False) -> None:
                     for fname, content in data_snapshots.items():
                         (snap_dir / fname).write_text(content)
                     
-                    # Build orphan commit using a temp index + bare ops
-                    env = {
-                        **subprocess.os.environ,
-                        "GIT_DIR": str(PROJECT_ROOT / ".git"),
-                        "GIT_WORK_TREE": tmpdir,
-                        "GIT_INDEX_FILE": str(Path(tmpdir) / "_index"),
-                    }
+                    # Build orphan commit using hash-object + update-index
+                    # (no branch switching, no GIT_WORK_TREE needed)
+                    idx_file = str(Path(tmpdir) / "_index")
+                    idx_env = {**subprocess.os.environ, "GIT_INDEX_FILE": idx_file}
                     
-                    def _tgit(*args, **kw):
-                        return subprocess.run(
-                            ["git"] + list(args),
-                            capture_output=True, env=env,
-                            timeout=kw.get("timeout", 15),
-                        )
+                    # Add each file to the temp index
+                    tmp_path = Path(tmpdir)
+                    for fpath in sorted(tmp_path.rglob("*")):
+                        if fpath.is_file() and fpath.name != "_index":
+                            rel = str(fpath.relative_to(tmp_path))
+                            blob = subprocess.run(
+                                ["git", "-C", str(PROJECT_ROOT), "hash-object", "-w", str(fpath)],
+                                capture_output=True, timeout=10,
+                            ).stdout.decode().strip()
+                            subprocess.run(
+                                ["git", "-C", str(PROJECT_ROOT), "update-index",
+                                 "--add", "--cacheinfo", f"100644,{blob},{rel}"],
+                                capture_output=True, env=idx_env, timeout=10,
+                            )
                     
-                    _tgit("add", "docs/", "data/")
-                    tree_result = _tgit("write-tree")
+                    tree_result = subprocess.run(
+                        ["git", "-C", str(PROJECT_ROOT), "write-tree"],
+                        capture_output=True, env=idx_env, timeout=10,
+                    )
                     if tree_result.returncode != 0:
                         logger.warning(f"write-tree failed: {tree_result.stderr.decode()}")
                         return
