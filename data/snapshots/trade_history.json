@@ -1,0 +1,158 @@
+[
+  {
+    "date": "2026-03-02",
+    "executed_at": "2026-03-02T14:50:52",
+    "mode": "live",
+    "decisions": [
+      {
+        "symbol": "DY",
+        "action": "cover",
+        "qty": 357,
+        "status": "pending_new",
+        "price": 423.52
+      },
+      {
+        "symbol": "LOW",
+        "action": "cover",
+        "qty": 536,
+        "status": "pending_new",
+        "price": 257.91
+      },
+      {
+        "symbol": "CVS",
+        "action": "buy",
+        "qty": 1885,
+        "status": "pending_new",
+        "price": 79.85
+      },
+      {
+        "symbol": "AGM",
+        "action": "buy",
+        "qty": 957,
+        "status": "pending_new",
+        "price": 157.25
+      }
+    ],
+    "decision_count": 4,
+    "portfolio_value": 1000686.75,
+    "cash": 544930.91
+  },
+  {
+    "date": "2026-03-05",
+    "executed_at": "2026-03-05T16:11:29",
+    "mode": "live",
+    "decisions": [
+      {
+        "symbol": "INTU",
+        "action": "buy",
+        "qty": 332,
+        "status": "pending_new",
+        "price": 460.99
+      },
+      {
+        "symbol": "ABNB",
+        "action": "buy",
+        "qty": 1138,
+        "status": "pending_new",
+        "price": 134.58
+      },
+      {
+        "symbol": "CRM",
+        "action": "buy",
+        "qty": 765,
+        "status": "rejected",
+        "price": 200.19
+      },
+      {
+        "symbol": "WDAY",
+        "action": "buy",
+        "qty": 1047,
+        "status": "rejected",
+        "price": 146.26
+      },
+      {
+        "symbol": "TENB",
+        "action": "buy",
+        "qty": 7396,
+        "status": "rejected",
+        "price": 20.72
+      }
+    ],
+    "decision_count": 5,
+    "portfolio_value": 1021629.76,
+    "cash": 392243.9
+  },
+  {
+    "date": "2026-03-06",
+    "executed_at": "2026-03-06T14:35:44",
+    "mode": "live",
+    "decisions": [
+      {
+        "symbol": "ABNB",
+        "action": "sell",
+        "qty": 1138,
+        "status": "pending_new",
+        "price": 133.08
+      },
+      {
+        "symbol": "INTU",
+        "action": "sell",
+        "qty": 332,
+        "status": "pending_new",
+        "price": 473.81
+      },
+      {
+        "symbol": "VSEC",
+        "action": "cover",
+        "qty": 662,
+        "status": "pending_new",
+        "price": 214.33
+      },
+      {
+        "symbol": "INTU",
+        "action": "buy",
+        "qty": 323,
+        "status": "pending_new",
+        "price": 473.81
+      },
+      {
+        "symbol": "CRM",
+        "action": "buy",
+        "qty": 760,
+        "status": "pending_new",
+        "price": 201.76
+      },
+      {
+        "symbol": "TENB",
+        "action": "buy",
+        "qty": 7284,
+        "status": "pending_new",
+        "price": 21.06
+      },
+      {
+        "symbol": "WDAY",
+        "action": "buy",
+        "qty": 1039,
+        "status": "rejected",
+        "price": 147.59
+      },
+      {
+        "symbol": "ADP",
+        "action": "buy",
+        "qty": 689,
+        "status": "rejected",
+        "price": 222.35
+      },
+      {
+        "symbol": "MPWR",
+        "action": "short",
+        "qty": 146,
+        "status": "rejected",
+        "price": 1044.81
+      }
+    ],
+    "decision_count": 9,
+    "portfolio_value": 1018982.66,
+    "cash": 99778.73
+  }
+]

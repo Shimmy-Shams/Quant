@@ -1,0 +1,284 @@
+[
+  {
+    "date": "2026-02-26",
+    "generated_at": "2026-02-27T02:38:14",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 90,
+    "actionable_count": 0,
+    "signals": []
+  },
+  {
+    "date": "2026-02-27",
+    "generated_at": "2026-03-02T14:50:38",
+    "mode": "live",
+    "phase": "execution",
+    "entry_threshold": 1.5,
+    "total_valid": 95,
+    "actionable_count": 3,
+    "signals": [
+      {
+        "symbol": "CVS",
+        "direction": "LONG",
+        "signal": -1.9081,
+        "z_score": 1.8161,
+        "price": 79.85
+      },
+      {
+        "symbol": "VSEC",
+        "direction": "SHORT",
+        "signal": 1.6239,
+        "z_score": 1.8699,
+        "price": 226.97
+      },
+      {
+        "symbol": "AGM",
+        "direction": "LONG",
+        "signal": -1.6091,
+        "z_score": -1.2182,
+        "price": 157.25
+      }
+    ]
+  },
+  {
+    "date": "2026-02-27",
+    "generated_at": "2026-03-04T21:10:24",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 79,
+    "actionable_count": 0,
+    "signals": []
+  },
+  {
+    "date": "2026-03-04",
+    "generated_at": "2026-03-05T00:05:21",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 90,
+    "actionable_count": 5,
+    "signals": [
+      {
+        "symbol": "INTU",
+        "direction": "LONG",
+        "signal": -3.6125,
+        "z_score": 5.2249,
+        "price": 440.09
+      },
+      {
+        "symbol": "ABNB",
+        "direction": "LONG",
+        "signal": -2.4144,
+        "z_score": 2.8288,
+        "price": 135.56
+      },
+      {
+        "symbol": "TENB",
+        "direction": "LONG",
+        "signal": -2.3416,
+        "z_score": 2.6833,
+        "price": 20.41
+      },
+      {
+        "symbol": "WDAY",
+        "direction": "LONG",
+        "signal": -2.1631,
+        "z_score": 2.3262,
+        "price": 143.1
+      },
+      {
+        "symbol": "CRM",
+        "direction": "LONG",
+        "signal": -1.6269,
+        "z_score": 1.2538,
+        "price": 193.0
+      }
+    ]
+  },
+  {
+    "date": "2026-03-04",
+    "generated_at": "2026-03-05T16:11:25",
+    "mode": "live",
+    "phase": "execution",
+    "entry_threshold": 1.5,
+    "total_valid": 90,
+    "actionable_count": 5,
+    "signals": [
+      {
+        "symbol": "INTU",
+        "direction": "LONG",
+        "signal": -3.6125,
+        "z_score": 5.2249,
+        "price": 440.09
+      },
+      {
+        "symbol": "ABNB",
+        "direction": "LONG",
+        "signal": -2.4144,
+        "z_score": 2.8288,
+        "price": 135.56
+      },
+      {
+        "symbol": "TENB",
+        "direction": "LONG",
+        "signal": -2.3416,
+        "z_score": 2.6833,
+        "price": 20.41
+      },
+      {
+        "symbol": "WDAY",
+        "direction": "LONG",
+        "signal": -2.1631,
+        "z_score": 2.3262,
+        "price": 143.1
+      },
+      {
+        "symbol": "CRM",
+        "direction": "LONG",
+        "signal": -1.6269,
+        "z_score": 1.2538,
+        "price": 193.0
+      }
+    ]
+  },
+  {
+    "date": "2026-03-05",
+    "generated_at": "2026-03-05T22:39:53",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 85,
+    "actionable_count": 7,
+    "signals": [
+      {
+        "symbol": "INTU",
+        "direction": "LONG",
+        "signal": -4.1699,
+        "z_score": 6.3399,
+        "price": 466.83
+      },
+      {
+        "symbol": "CRM",
+        "direction": "LONG",
+        "signal": -2.3585,
+        "z_score": 2.717,
+        "price": 201.39
+      },
+      {
+        "symbol": "TENB",
+        "direction": "LONG",
+        "signal": -2.2021,
+        "z_score": 2.4043,
+        "price": 21.18
+      },
+      {
+        "symbol": "WDAY",
+        "direction": "LONG",
+        "signal": -2.1511,
+        "z_score": 2.3022,
+        "price": 147.18
+      },
+      {
+        "symbol": "ADP",
+        "direction": "LONG",
+        "signal": -1.785,
+        "z_score": 1.5701,
+        "price": 222.66
+      },
+      {
+        "symbol": "MPWR",
+        "direction": "SHORT",
+        "signal": 1.7232,
+        "z_score": -2.8283,
+        "price": 1076.98
+      },
+      {
+        "symbol": "QTWO",
+        "direction": "LONG",
+        "signal": -1.6041,
+        "z_score": 1.2082,
+        "price": 51.99
+      }
+    ]
+  },
+  {
+    "date": "2026-03-05",
+    "generated_at": "2026-03-06T14:35:00",
+    "mode": "live",
+    "phase": "execution",
+    "entry_threshold": 1.5,
+    "total_valid": 85,
+    "actionable_count": 7,
+    "signals": [
+      {
+        "symbol": "INTU",
+        "direction": "LONG",
+        "signal": -4.1699,
+        "z_score": 6.3399,
+        "price": 466.83
+      },
+      {
+        "symbol": "CRM",
+        "direction": "LONG",
+        "signal": -2.3585,
+        "z_score": 2.717,
+        "price": 201.39
+      },
+      {
+        "symbol": "TENB",
+        "direction": "LONG",
+        "signal": -2.2021,
+        "z_score": 2.4043,
+        "price": 21.18
+      },
+      {
+        "symbol": "WDAY",
+        "direction": "LONG",
+        "signal": -2.1511,
+        "z_score": 2.3022,
+        "price": 147.18
+      },
+      {
+        "symbol": "ADP",
+        "direction": "LONG",
+        "signal": -1.785,
+        "z_score": 1.5701,
+        "price": 222.66
+      },
+      {
+        "symbol": "MPWR",
+        "direction": "SHORT",
+        "signal": 1.7232,
+        "z_score": -2.8283,
+        "price": 1076.98
+      },
+      {
+        "symbol": "QTWO",
+        "direction": "LONG",
+        "signal": -1.6041,
+        "z_score": 1.2082,
+        "price": 51.99
+      }
+    ]
+  },
+  {
+    "date": "2026-03-06",
+    "generated_at": "2026-03-06T21:10:24",
+    "mode": "live",
+    "phase": "generation",
+    "entry_threshold": 1.5,
+    "total_valid": 94,
+    "actionable_count": 1,
+    "signals": [
+      {
+        "symbol": "QTWO",
+        "direction": "LONG",
+        "signal": -2.2822,
+        "z_score": 2.5644,
+        "price": 52.86
+      }
+    ]
+  }
+]

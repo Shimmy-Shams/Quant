@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant Trading Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 24px;
+    line-height: 1.5;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+.header h1 {
+    font-size: 1.8em;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.subtitle { color: #8b949e; font-size: 0.95em; margin-top: 4px; }
+.header-right { text-align: right; }
+.timestamp { color: #8b949e; font-size: 0.85em; margin-top: 4px; }
+
+/* Market status badge */
+.market-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.market-badge.open     { background: #238636; color: #fff; }
+.market-badge.closed   { background: #30363d; color: #8b949e; }
+.market-badge.extended { background: #9e6a03; color: #fff; }
+
+/* Metric cards */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+}
+.metric-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.2s;
+}
+.metric-card:hover { border-color: #667eea; }
+.metric-label { color: #8b949e; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.metric-value { font-size: 1.6em; font-weight: 700; }
+
+/* Positive / Negative */
+.positive { color: #3fb950; }
+.negative { color: #f85149; }
+
+/* Sections */
+.section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.section-title { font-size: 1.2em; font-weight: 600; margin-bottom: 16px; }
+.section-header .section-title { margin-bottom: 0; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; }
+#trades-table { max-height: 420px; overflow-y: auto; }
+.watchlist-info-scroll { max-height: 340px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid #30363d;
+    color: #8b949e;
+    font-weight: 500;
+    font-size: 0.82em;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+td { padding: 10px 14px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+tbody tr:hover { background: rgba(102,126,234,0.04); }
+tfoot td { border-top: 2px solid #30363d; border-bottom: none; padding-top: 14px; }
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.badge-long   { background: #238636; color: #fff; }
+.badge-short  { background: #da3633; color: #fff; }
+.badge-buy    { background: #238636; color: #fff; }
+.badge-sell   { background: #da3633; color: #fff; }
+.badge-filled { background: #1f6feb; color: #fff; }
+.badge-closed { background: #30363d; color: #8b949e; }
+.badge-open { background: #d29922; color: #fff; }
+.badge-stoploss { background: #da3633; color: #fff; font-size: 0.75em; }
+.badge-takeprofit { background: #238636; color: #fff; font-size: 0.75em; }
+.badge-bracket { background: #8957e5; color: #fff; font-size: 0.75em; }
+
+/* After-hours info */
+.ah-badge {
+    font-size: 0.8em;
+    color: #d29922;
+    margin-top: 2px;
+}
+.stock-name { font-size: 0.78em; color: #8b949e; }
+
+/* Live dot */
+.live-dot { color: #3fb950; }
+.live-dot::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #3fb950; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Price status */
+.price-status { font-size: 0.85em; color: #8b949e; }
+
+/* Price flash animation */
+@keyframes priceFlash {
+    0%   { background: rgba(102,126,234,0.3); }
+    100% { background: transparent; }
+}
+.price-flash { animation: priceFlash 1.2s ease-out; }
+
+/* Chart */
+.chart-container { height: 350px; position: relative; }
+.chart-container.chart-lg { height: 400px; }
+
+/* Broker-style equity header */
+.equity-section { padding-bottom: 16px; }
+.equity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.equity-header-left { min-width: 200px; }
+.equity-value {
+    font-size: 2.2em;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    transition: color 0.3s;
+}
+.equity-change {
+    font-size: 0.95em;
+    font-weight: 500;
+    margin-top: 2px;
+}
+.equity-range-label {
+    color: #8b949e;
+    font-size: 0.85em;
+    margin-left: 4px;
+}
+
+/* Watchlist dropdown */
+#watchlist-select {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    min-width: 160px;
+}
+#watchlist-select:hover, #watchlist-select:focus { border-color: #667eea; }
+#watchlist-select option { background: #161b22; color: #c9d1d9; }
+
+/* Toggle groups (equity range) */
+.toggle-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.toggle-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.toggle-btn:hover { border-color: #667eea; color: #c9d1d9; }
+.toggle-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
+
+/* Watchlist */
+.watch-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    gap: 16px;
+}
+.watch-info-row:hover { border-color: #667eea; background: rgba(102,126,234,0.04); }
+.watch-info-row.active { border-color: #667eea; background: rgba(102,126,234,0.08); }
+.watch-info-left { min-width: 120px; }
+.watch-info-mid { display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+.watch-detail-inline { color: #8b949e; font-size: 0.82em; }
+.watch-links { display: flex; gap: 6px; }
+.watch-links a {
+    color: #667eea;
+    text-decoration: none;
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 3px 10px;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+.watch-links a:hover { background: #667eea; color: #fff; border-color: #667eea; }
+.watch-price {
+    font-size: 1.1em;
+    font-weight: 700;
+}
+.tradingview-widget {
+    margin-top: 12px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #21262d;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #484f58;
+    font-size: 0.82em;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #21262d;
+}
+.footer a { color: #667eea; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+.muted { color: #484f58; font-style: italic; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { padding: 12px; }
+    .header { flex-direction: column; }
+    .header-right { text-align: left; }
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .metric-value { font-size: 1.3em; }
+    .watchlist-grid { grid-template-columns: 1fr; }
+    .tradingview-widget iframe { min-height: 420px !important; }
+    .watchlist-info-scroll { max-height: 280px; }
+}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>Quant Trading Dashboard</h1>
+                <div class="subtitle">Mean Reversion Strategy &middot; Alpaca Paper Trading</div>
+            </div>
+            <div class="header-right">
+                <div id="market-status" class="market-badge">Loading...</div>
+                <div id="last-update" class="timestamp"></div>
+                <div id="refresh-countdown" class="timestamp"></div>
+            </div>
+        </header>
+
+        <!-- Account Summary Cards -->
+        <div class="metrics-grid" id="metrics-grid"></div>
+
+        <!-- Positions -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Open Positions</div>
+                <div id="price-status" class="price-status"></div>
+            </div>
+            <div id="positions-table" class="table-wrap"></div>
+        </div>
+
+        <!-- Watchlist / TradingView Charts -->
+        <div class="section" id="watchlist-section" style="display:none;">
+            <div class="section-header">
+                <div class="section-title">Watchlist &amp; Charts</div>
+                <select id="watchlist-select" onchange="selectWatchSymbol(this.value || null)"></select>
+            </div>
+            <div id="watchlist-chart" style="display:none;"></div>
+            <div id="watchlist-info" class="watchlist-info-scroll"></div>
+        </div>
+
+        <!-- Equity Curve (Broker-style) -->
+        <div class="section equity-section">
+            <div class="equity-header">
+                <div class="equity-header-left">
+                    <div id="equity-value" class="equity-value">$0.00</div>
+                    <div id="equity-change" class="equity-change"></div>
+                </div>
+                <div id="equity-range-toggle" class="toggle-group">
+                    <button class="toggle-btn" data-range="1d" onclick="setEquityRange('1d')">1D</button>
+                    <button class="toggle-btn" data-range="1m" onclick="setEquityRange('1m')">1M</button>
+                    <button class="toggle-btn" data-range="3m" onclick="setEquityRange('3m')">3M</button>
+                    <button class="toggle-btn" data-range="1y" onclick="setEquityRange('1y')">1Y</button>
+                    <button class="toggle-btn active" data-range="all" onclick="setEquityRange('all')">All</button>
+                </div>
+            </div>
+            <div class="chart-container chart-lg">
+                <canvas id="equityChart"></canvas>
+            </div>
+            <p id="no-equity" class="muted" style="display:none;">
+                Equity curve data will appear after trading cycles accumulate snapshots.
+            </p>
+        </div>
+
+        <!-- Open Orders -->
+        <div class="section" id="open-orders-section">
+            <div class="section-header">
+                <div class="section-title">Open Orders</div>
+                <div id="open-orders-count" class="timestamp"></div>
+            </div>
+            <div id="open-orders-table" class="table-wrap"></div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Recent Trades</div>
+                <div id="trades-filter-toggle" class="range-toggle">
+                    <button class="toggle-btn active" data-filter="all" onclick="setTradeFilter('all')">All</button>
+                    <button class="toggle-btn" data-filter="entry" onclick="setTradeFilter('entry')">Entries</button>
+                    <button class="toggle-btn" data-filter="exit" onclick="setTradeFilter('exit')">Exits</button>
+                </div>
+            </div>
+            <div id="trades-table" class="table-wrap"></div>
+        </div>
+
+        <footer class="footer">
+            Dashboard data pushed after each trading cycle &middot;
+            Live prices fetched from Yahoo Finance every 5s &middot;
+            <a href="https://github.com/Shimmy-Shams/Quant" target="_blank">GitHub</a>
+        </footer>
+    </div>
+
+    <script>
+    // ── Embedded server-side data ─────────────────────────────────────────
+    const DATA = {"positions": [{"symbol": "ADBE", "side": "long", "qty": 596.0, "entry_price": 255.254916, "current_price": 283.62, "market_value": 169037.52, "pnl": 16905.590064, "pnl_pct": 11.112}, {"symbol": "CRM", "side": "long", "qty": 760.0, "entry_price": 201.032343, "current_price": 202.11, "market_value": 153603.6, "pnl": 819.01932, "pnl_pct": 0.536}, {"symbol": "CVS", "side": "long", "qty": 1885.0, "entry_price": 80.33, "current_price": 77.92, "market_value": 146879.2, "pnl": -4542.85, "pnl_pct": -3.0}, {"symbol": "INTU", "side": "long", "qty": 323.0, "entry_price": 471.304954, "current_price": 481.17, "market_value": 155417.91, "pnl": 3186.409858, "pnl_pct": 2.093}, {"symbol": "RYAN", "side": "long", "qty": 3775.0, "entry_price": 38.73, "current_price": 39.72, "market_value": 149943.0, "pnl": 3737.25, "pnl_pct": 2.556}, {"symbol": "TENB", "side": "long", "qty": 7284.0, "entry_price": 21.14, "current_price": 21.04, "market_value": 153255.36, "pnl": -728.4, "pnl_pct": -0.473}], "trades": [{"symbol": "TENB", "side": "buy", "qty": 7284.0, "price": 21.14, "date": "2026-03-06", "status": "filled", "trade_type": "entry"}, {"symbol": "CRM", "side": "buy", "qty": 760.0, "price": 201.032343, "date": "2026-03-06", "status": "filled", "trade_type": "entry"}, {"symbol": "INTU", "side": "buy", "qty": 323.0, "price": 471.304954, "date": "2026-03-06", "status": "filled", "trade_type": "entry"}, {"symbol": "VSEC", "side": "buy", "qty": 662.0, "price": 213.71, "date": "2026-03-06", "status": "filled", "trade_type": "exit", "entry_price": 222.57, "pnl_pct": 3.98}, {"symbol": "INTU", "side": "sell", "qty": 332.0, "price": 472.981295, "date": "2026-03-06", "status": "filled", "trade_type": "exit", "entry_price": 461.34, "pnl_pct": 2.52}, {"symbol": "ABNB", "side": "sell", "qty": 1138.0, "price": 132.672452, "date": "2026-03-06", "status": "filled", "trade_type": "exit", "entry_price": 134.61, "pnl_pct": -1.44}, {"symbol": "ABNB", "side": "buy", "qty": 1138.0, "price": 134.61, "date": "2026-03-05", "status": "filled", "trade_type": "entry"}, {"symbol": "INTU", "side": "buy", "qty": 332.0, "price": 461.34, "date": "2026-03-05", "status": "filled", "trade_type": "entry"}, {"symbol": "AGM", "side": "sell", "qty": 957.0, "price": 162.08, "date": "2026-03-05", "status": "filled", "trade_type": "exit", "entry_price": 157.37, "pnl_pct": 2.99}, {"symbol": "ABNB", "side": "sell", "qty": 1130.0, "price": 134.96, "date": "2026-03-05", "status": "filled", "trade_type": "exit", "entry_price": 136.24, "pnl_pct": -0.94}, {"symbol": "ABNB", "side": "buy", "qty": 1130.0, "price": 136.24, "date": "2026-03-05", "status": "filled", "trade_type": "entry"}, {"symbol": "AGM", "side": "buy", "qty": 957.0, "price": 157.37, "date": "2026-03-02", "status": "filled", "trade_type": "entry"}, {"symbol": "CVS", "side": "buy", "qty": 1885.0, "price": 80.33, "date": "2026-03-02", "status": "filled", "trade_type": "entry"}, {"symbol": "LOW", "side": "buy", "qty": 536.0, "price": 258.19, "date": "2026-03-02", "status": "filled", "trade_type": "exit", "entry_price": 277.97, "pnl_pct": 7.12}, {"symbol": "DY", "side": "buy", "qty": 357.0, "price": 419.15, "date": "2026-03-02", "status": "filled", "trade_type": "entry"}, {"symbol": "VSEC", "side": "sell", "qty": 662.0, "price": 222.57, "date": "2026-03-02", "status": "filled", "trade_type": "entry"}, {"symbol": "PATK", "side": "buy", "qty": 1132.0, "price": 128.5, "date": "2026-02-25", "status": "filled", "trade_type": "exit", "entry_price": 129.5, "pnl_pct": 0.77}, {"symbol": "MCHP", "side": "buy", "qty": 1921.0, "price": 75.59, "date": "2026-02-25", "status": "filled", "trade_type": "exit", "entry_price": 76.126277, "pnl_pct": 0.7}, {"symbol": "ADBE", "side": "buy", "qty": 596.0, "price": 255.254917, "date": "2026-02-24", "status": "filled", "trade_type": "entry"}, {"symbol": "MCHP", "side": "sell", "qty": 1921.0, "price": 76.126277, "date": "2026-02-24", "status": "filled", "trade_type": "entry"}, {"symbol": "RYAN", "side": "buy", "qty": 3775.0, "price": 38.73, "date": "2026-02-24", "status": "filled", "trade_type": "entry"}, {"symbol": "PATK", "side": "sell", "qty": 1132.0, "price": 129.5, "date": "2026-02-24", "status": "filled", "trade_type": "entry"}, {"symbol": "LOW", "side": "sell", "qty": 536.0, "price": 277.97, "date": "2026-02-24", "status": "filled", "trade_type": "entry"}], "open_orders": [{"symbol": "TENB", "side": "sell", "qty": 7284.0, "type": "stop", "stop_price": 18.6, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-03-06 14:35:44", "order_id": "dc8221ae-51fd-4f38-8bb2-b7c241b50769"}, {"symbol": "CRM", "side": "sell", "qty": 760.0, "type": "stop", "stop_price": 176.91, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-03-06 14:35:42", "order_id": "82bcf3ab-999d-417c-92fb-3c745bdb3378"}, {"symbol": "INTU", "side": "sell", "qty": 323.0, "type": "stop", "stop_price": 414.75, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-03-06 14:35:36", "order_id": "9c9b12a3-de7b-48d5-9653-6cde7d1ca02c"}, {"symbol": "CVS", "side": "sell", "qty": 1885.0, "type": "stop", "stop_price": 70.69, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-03-02 14:50:46", "order_id": "1aa4f2d8-b85c-43ff-b359-006601d9954f"}, {"symbol": "RYAN", "side": "sell", "qty": 3775.0, "type": "stop", "stop_price": 34.86, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-02-25 15:22:46", "order_id": "c02e1e3f-c59e-4baa-9c53-d5134a4c47e6"}, {"symbol": "ADBE", "side": "sell", "qty": 596.0, "type": "stop", "stop_price": 229.73, "limit_price": null, "order_class": "simple", "time_in_force": "gtc", "status": "new", "submitted_at": "2026-02-25 15:22:46", "order_id": "4079c330-cd7c-4795-a0dc-91a055659deb"}], "account": {"equity": 1027915.32, "cash": 99778.73, "portfolio_value": 1027915.32, "buying_power": 1127694.05}, "equity_curve": [{"date": "2026-02-13 01:00", "equity": 1000000.0, "isoDate": "2026-02-13T01:00:00"}, {"date": "2026-02-14 01:00", "equity": 1000000.0, "isoDate": "2026-02-14T01:00:00"}, {"date": "2026-02-18 01:00", "equity": 1000075.02, "isoDate": "2026-02-18T01:00:00"}, {"date": "2026-02-19 01:00", "equity": 1000416.93, "isoDate": "2026-02-19T01:00:00"}, {"date": "2026-02-20 01:00", "equity": 1002053.91, "isoDate": "2026-02-20T01:00:00"}, {"date": "2026-02-21 01:00", "equity": 990584.98, "isoDate": "2026-02-21T01:00:00"}, {"date": "2026-02-24 01:00", "equity": 985058.57, "isoDate": "2026-02-24T01:00:00"}, {"date": "2026-02-25 01:00", "equity": 982600.8, "isoDate": "2026-02-25T01:00:00"}, {"date": "2026-02-26 01:00", "equity": 991761.1, "isoDate": "2026-02-26T01:00:00"}, {"date": "2026-02-27 01:00", "equity": 998324.83, "isoDate": "2026-02-27T01:00:00"}, {"date": "2026-02-28 01:00", "equity": 1000827.05, "isoDate": "2026-02-28T01:00:00"}, {"date": "2026-03-03 01:00", "equity": 1011780.74, "isoDate": "2026-03-03T01:00:00"}, {"date": "2026-03-04 01:00", "equity": 1017969.65, "isoDate": "2026-03-04T01:00:00"}, {"date": "2026-03-05 01:00", "equity": 1013455.52, "isoDate": "2026-03-05T01:00:00"}, {"date": "2026-03-06 01:00", "equity": 1024876.84, "isoDate": "2026-03-06T01:00:00"}, {"date": "2026-03-06 18:08", "equity": 1015508.99, "isoDate": "2026-03-06T18:08:00"}, {"date": "2026-03-06 21:10", "equity": 1027513.57, "isoDate": "2026-03-06T21:10:00"}, {"date": "2026-03-07 00:10", "equity": 1023884.14, "isoDate": "2026-03-07T00:10:00"}, {"date": "2026-03-07 03:10", "equity": 1027915.32, "isoDate": "2026-03-07T03:10:00"}], "intraday_equity": [{"time": "2026-03-06T14:30:00", "equity": 1019253.95}, {"time": "2026-03-06T14:35:00", "equity": 1022807.45}, {"time": "2026-03-06T14:40:00", "equity": 1014971.31}, {"time": "2026-03-06T14:45:00", "equity": 1010548.94}, {"time": "2026-03-06T14:50:00", "equity": 1011607.24}, {"time": "2026-03-06T14:55:00", "equity": 1014127.56}, {"time": "2026-03-06T15:00:00", "equity": 1010354.34}, {"time": "2026-03-06T15:05:00", "equity": 1010412.69}, {"time": "2026-03-06T15:10:00", "equity": 1010573.65}, {"time": "2026-03-06T15:15:00", "equity": 1013579.01}, {"time": "2026-03-06T15:20:00", "equity": 1011466.35}, {"time": "2026-03-06T15:25:00", "equity": 1013642.75}, {"time": "2026-03-06T15:30:00", "equity": 1016764.11}, {"time": "2026-03-06T15:35:00", "equity": 1019650.33}, {"time": "2026-03-06T15:40:00", "equity": 1019079.17}, {"time": "2026-03-06T15:45:00", "equity": 1017397.27}, {"time": "2026-03-06T15:50:00", "equity": 1017897.1}, {"time": "2026-03-06T15:55:00", "equity": 1016482.83}, {"time": "2026-03-06T16:00:00", "equity": 1020247.46}, {"time": "2026-03-06T16:05:00", "equity": 1022589.01}, {"time": "2026-03-06T16:10:00", "equity": 1021310.99}, {"time": "2026-03-06T16:15:00", "equity": 1019686.62}, {"time": "2026-03-06T16:20:00", "equity": 1019460.29}, {"time": "2026-03-06T16:25:00", "equity": 1019709.23}, {"time": "2026-03-06T16:30:00", "equity": 1019656.3}, {"time": "2026-03-06T16:35:00", "equity": 1017653.3}, {"time": "2026-03-06T16:40:00", "equity": 1021341.92}, {"time": "2026-03-06T16:45:00", "equity": 1018898.86}, {"time": "2026-03-06T16:50:00", "equity": 1021750.25}, {"time": "2026-03-06T16:55:00", "equity": 1021322.33}, {"time": "2026-03-06T17:00:00", "equity": 1022680.1}, {"time": "2026-03-06T17:05:00", "equity": 1023990.34}, {"time": "2026-03-06T17:10:00", "equity": 1019764.5}, {"time": "2026-03-06T17:15:00", "equity": 1017934.81}, {"time": "2026-03-06T17:20:00", "equity": 1019545.72}, {"time": "2026-03-06T17:25:00", "equity": 1019704.96}, {"time": "2026-03-06T17:30:00", "equity": 1019305.1}, {"time": "2026-03-06T17:35:00", "equity": 1019217.02}, {"time": "2026-03-06T17:40:00", "equity": 1017085.81}, {"time": "2026-03-06T17:45:00", "equity": 1014594.66}, {"time": "2026-03-06T17:50:00", "equity": 1016198.82}, {"time": "2026-03-06T17:55:00", "equity": 1015431.71}, {"time": "2026-03-06T18:00:00", "equity": 1015654.83}, {"time": "2026-03-06T18:05:00", "equity": 1015200.68}, {"time": "2026-03-06T18:10:00", "equity": 1015553.94}, {"time": "2026-03-06T18:15:00", "equity": 1015136.98}, {"time": "2026-03-06T18:20:00", "equity": 1015844.59}, {"time": "2026-03-06T18:25:00", "equity": 1014776.66}, {"time": "2026-03-06T18:30:00", "equity": 1014030.25}, {"time": "2026-03-06T18:35:00", "equity": 1013437.0}, {"time": "2026-03-06T18:40:00", "equity": 1012774.99}, {"time": "2026-03-06T18:45:00", "equity": 1013831.26}, {"time": "2026-03-06T18:50:00", "equity": 1016143.48}, {"time": "2026-03-06T18:55:00", "equity": 1014618.16}, {"time": "2026-03-06T19:00:00", "equity": 1015141.72}, {"time": "2026-03-06T19:05:00", "equity": 1016098.31}, {"time": "2026-03-06T19:10:00", "equity": 1018383.13}, {"time": "2026-03-06T19:15:00", "equity": 1019490.07}, {"time": "2026-03-06T19:20:00", "equity": 1020269.2}, {"time": "2026-03-06T19:25:00", "equity": 1020013.39}, {"time": "2026-03-06T19:30:00", "equity": 1019667.7}, {"time": "2026-03-06T19:35:00", "equity": 1020689.46}, {"time": "2026-03-06T19:40:00", "equity": 1021850.08}, {"time": "2026-03-06T19:45:00", "equity": 1022165.03}, {"time": "2026-03-06T19:50:00", "equity": 1022994.92}, {"time": "2026-03-06T19:55:00", "equity": 1022704.89}, {"time": "2026-03-06T20:00:00", "equity": 1025910.61}, {"time": "2026-03-06T20:05:00", "equity": 1025249.53}, {"time": "2026-03-06T20:10:00", "equity": 1025590.45}, {"time": "2026-03-06T20:15:00", "equity": 1024323.32}, {"time": "2026-03-06T20:20:00", "equity": 1025421.53}, {"time": "2026-03-06T20:25:00", "equity": 1025587.99}, {"time": "2026-03-06T20:30:00", "equity": 1024869.92}, {"time": "2026-03-06T20:35:00", "equity": 1023909.6}, {"time": "2026-03-06T20:40:00", "equity": 1025094.51}, {"time": "2026-03-06T20:45:00", "equity": 1025819.94}, {"time": "2026-03-06T20:50:00", "equity": 1026564.36}, {"time": "2026-03-06T20:55:00", "equity": 1026663.22}, {"time": "2026-03-06T21:00:00", "equity": 1027999.44}], "metrics": {"portfolio_value": 1027915.32, "cash": 99778.73, "buying_power": 1127694.05, "total_return_pct": 2.791531999999995, "total_trades": 23, "win_rate": 75.0, "sharpe_ratio": 3.55122413490943, "max_drawdown": 1.9413236958478595}, "server_quotes": {"ADBE": {"price": 283.62, "change": 1.62, "changePct": 0.5745, "previousClose": 282.0, "dayHigh": 284.0, "dayLow": 275.0, "volume": 4226571, "name": "Adobe Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 283.2, "postChange": 1.2, "postChangePct": 0.4255}, "CRM": {"price": 202.11, "change": -0.04, "changePct": -0.0198, "previousClose": 202.15, "dayHigh": 203.63, "dayLow": 197.28, "volume": 9357313, "name": "Salesforce, Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 200.7, "postChange": -1.45, "postChangePct": -0.7173}, "CVS": {"price": 77.92, "change": -0.788, "changePct": -1.0012, "previousClose": 78.708, "dayHigh": 78.96, "dayLow": 76.93, "volume": 6759664, "name": "CVS Health Corporation", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 77.77, "postChange": -0.938, "postChangePct": -1.1917}, "INTU": {"price": 481.17, "change": 16.44, "changePct": 3.5375, "previousClose": 464.73, "dayHigh": 483.96, "dayLow": 427.21, "volume": 5397069, "name": "Intuit Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 481.0, "postChange": -0.17, "postChangePct": -3.5333}, "RYAN": {"price": 39.72, "change": -0.28, "changePct": -0.7, "previousClose": 40.0, "dayHigh": 39.89, "dayLow": 38.3, "volume": 1388550, "name": "Ryan Specialty Holdings, Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 39.72, "postChange": null, "postChangePct": null}, "TENB": {"price": 21.04, "change": 0.14, "changePct": 0.6699, "previousClose": 20.9, "dayHigh": 21.235, "dayLow": 20.1, "volume": 2860570, "name": "Tenable Holdings, Inc.", "marketState": "POST", "prePrice": null, "preChange": null, "preChangePct": null, "postPrice": 20.5508, "postChange": -0.3492, "postChangePct": -1.6708}}, "generated_utc": "2026-03-07 03:10:38"};
+
+    // ── Configuration ─────────────────────────────────────────────────────
+    const REFRESH_INTERVAL = 5;           // seconds between price refreshes
+    const INITIAL_CAPITAL   = 1000000;
+    const CORS_PROXIES = [
+        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+        url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    ];
+
+    let countdown = REFRESH_INTERVAL;
+
+    // ── Time-based market state detection ──────────────────────────────────
+    // Crypto symbols trade 24/7 and are always REGULAR
+    const CRYPTO_SYMS = new Set(['ETHUSD','BTCUSD','SOLUSD','XRPUSD','DOGEUSD','ETCUSD','AVAXUSD','ADAUSD','SHIBUSD','LINKUSD','DOTUSD','LTCUSD','UNIUSD','BCHUSD','AAVEUSD']);
+    function isCrypto(symbol) { return CRYPTO_SYMS.has(symbol) || /USD$/.test(symbol); }
+
+    function getCurrentMarketState(symbol) {
+        // Crypto = always open
+        if (isCrypto(symbol)) return 'REGULAR';
+
+        // Determine current Eastern Time
+        const now = new Date();
+        const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+        const et = new Date(etStr);
+        const day = et.getDay();   // 0=Sun .. 6=Sat
+        const h = et.getHours();
+        const m = et.getMinutes();
+        const minutes = h * 60 + m;  // minutes since midnight ET
+
+        // Weekend = CLOSED
+        if (day === 0 || day === 6) return 'CLOSED';
+
+        // Pre-market:  4:00 AM – 9:29 AM ET
+        if (minutes >= 240 && minutes < 570) return 'PRE';
+        // Regular:     9:30 AM – 3:59 PM ET
+        if (minutes >= 570 && minutes < 960) return 'REGULAR';
+        // Post-market: 4:00 PM – 7:59 PM ET
+        if (minutes >= 960 && minutes < 1200) return 'POST';
+        // Outside all sessions
+        return 'CLOSED';
+    }
+
+    // Seed with server-side quotes but override marketState with time-based values
+    let liveQuotes = {};
+    {
+        const sq = DATA.server_quotes || {};
+        for (const sym of Object.keys(sq)) {
+            liveQuotes[sym] = Object.assign({}, sq[sym], { marketState: getCurrentMarketState(sym) });
+        }
+    }
+    let equityChart = null;
+    let activeWatchSymbol = null;
+    let renderedChartSymbol = null;  // tracks which symbol's iframe is loaded
+    let currentEquityRange = 'all';
+    let fetchCount = 0;
+    let lastPrices = {};  // track previous prices for flash animation
+
+    // ── Utilities ─────────────────────────────────────────────────────────
+    const fmt  = (v, d=2) => v == null ? '—' : v.toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d});
+    const fmtD = (v)      => v == null ? '—' : '$' + fmt(v);
+    const fmtP = (v)      => v == null ? '—' : (v >= 0 ? '+' : '') + fmt(v) + '%';
+    const cls  = (v)      => v >= 0 ? 'positive' : 'negative';
+
+    // ── Yahoo Finance live price fetcher ──────────────────────────────────
+    function toYahooSymbol(s) {
+        if (s.endsWith('USD') && s.length <= 7 && !s.includes('-'))
+            return s.slice(0, -3) + '-USD';
+        return s;
+    }
+
+    // Fetch a single symbol via Yahoo v8 chart endpoint (more reliable than v7 quote)
+    async function fetchOneQuote(symbol) {
+        const yahooSym = toYahooSymbol(symbol);
+        const cacheBust = Date.now() + '_' + (fetchCount++);
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?range=1d&interval=1m&includePrePost=true&_=${cacheBust}`;
+
+        for (const makeProxy of CORS_PROXIES) {
+            try {
+                const resp = await fetch(makeProxy(url), {
+                    signal: AbortSignal.timeout(6000),
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+                });
+                if (!resp.ok) continue;
+                const json = await resp.json();
+                const result = json?.chart?.result?.[0];
+                if (!result) continue;
+                const meta = result.meta;
+                const prevClose = meta.chartPreviousClose || meta.previousClose;
+                const price = meta.regularMarketPrice;
+                const change = price - prevClose;
+                const changePct = prevClose ? (change / prevClose) * 100 : 0;
+                // Day high/low from indicators
+                const closes = result.indicators?.quote?.[0]?.close || [];
+                const highs  = result.indicators?.quote?.[0]?.high || [];
+                const lows   = result.indicators?.quote?.[0]?.low || [];
+                const vols   = result.indicators?.quote?.[0]?.volume || [];
+                const validHighs = highs.filter(v => v != null);
+                const validLows  = lows.filter(v => v != null);
+                const validCloses = closes.filter(v => v != null);
+                const totalVol   = vols.reduce((a,b) => a + (b||0), 0);
+
+                // Derive extended-hours prices from bar data when
+                // meta.postMarketPrice / meta.preMarketPrice are missing.
+                // The v8 chart with includePrePost=true has bars for
+                // 4 AM – 8 PM ET, so the last bar close reflects the
+                // actual latest price during extended sessions.
+                let postPrice  = meta.postMarketPrice || null;
+                let prePrice   = meta.preMarketPrice  || null;
+                const timestamps = result.timestamp || [];
+                const latestClose = validCloses.length > 0 ? validCloses[validCloses.length - 1] : null;
+
+                if (timestamps.length > 0 && latestClose != null) {
+                    const lastTs   = timestamps[timestamps.length - 1] * 1000;
+                    const lastBar  = new Date(lastTs);
+                    const etStr    = lastBar.toLocaleString('en-US', { timeZone: 'America/New_York' });
+                    const lastET   = new Date(etStr);
+                    const barMins  = lastET.getHours() * 60 + lastET.getMinutes();
+
+                    // Post-market bar (>= 16:00 ET) — use last bar close
+                    if (!postPrice && barMins >= 960) {
+                        postPrice = latestClose;
+                    }
+                    // Pre-market bar (4:00–9:29 AM ET) — use last bar close
+                    if (!prePrice && barMins >= 240 && barMins < 570) {
+                        prePrice = latestClose;
+                    }
+                }
+
+                const postChange    = postPrice ? postPrice - prevClose : null;
+                const postChangePct = (postPrice && prevClose) ? ((postPrice - prevClose) / prevClose) * 100 : null;
+                const preChange     = prePrice  ? prePrice  - prevClose : null;
+                const preChangePct  = (prePrice  && prevClose) ? ((prePrice  - prevClose) / prevClose) * 100 : null;
+
+                return {
+                    price, change, changePct,
+                    marketState:   meta.marketState || 'UNKNOWN',
+                    prePrice,
+                    preChange,
+                    preChangePct,
+                    postPrice,
+                    postChange,
+                    postChangePct,
+                    name:          meta.shortName || meta.symbol || yahooSym,
+                    dayHigh:       validHighs.length ? Math.max(...validHighs) : null,
+                    dayLow:        validLows.length  ? Math.min(...validLows) : null,
+                    volume:        totalVol || meta.regularMarketVolume || null,
+                    avgVolume:     null,
+                    fiftyTwoHigh:  meta.fiftyTwoWeekHigh || null,
+                    fiftyTwoLow:   meta.fiftyTwoWeekLow || null,
+                    previousClose: prevClose,
+                };
+            } catch (e) {
+                console.warn('Proxy failed for', symbol, ':', e.message);
+            }
+        }
+        return null;
+    }
+
+    async function fetchLiveQuotes(symbols) {
+        if (!symbols.length) return {};
+        const results = await Promise.allSettled(symbols.map(s => fetchOneQuote(s)));
+        const out = {};
+        results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value) out[symbols[i]] = r.value;
+        });
+        return out;
+    }
+
+    // ── Render helpers ────────────────────────────────────────────────────
+
+    function calcOpenPnl() {
+        let total = 0;
+        for (const p of DATA.positions) {
+            const q = liveQuotes[p.symbol];
+            const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+            const pnl = p.side === 'short'
+                ? (p.entry_price - curPrice) * Math.abs(p.qty)
+                : (curPrice - p.entry_price) * Math.abs(p.qty);
+            total += pnl;
+        }
+        return total;
+    }
+
+    function renderMetrics() {
+        const m = DATA.metrics;
+        const a = DATA.account;
+        const pv = livePortfolioValue();
+        const dayPnl = calculateDayPnl();
+        const openPnl = calcOpenPnl();
+        const totalPnl = pv - INITIAL_CAPITAL;
+        const closedPnl = totalPnl - openPnl;
+
+        const cards = [
+            { label: 'Portfolio Value', value: fmtD(pv), cls: '' },
+            { label: 'Cash', value: fmtD(a.cash), cls: '' },
+            { label: 'Total P&L', value: fmtD(totalPnl), cls: cls(totalPnl) },
+            { label: 'Open P&L', value: fmtD(openPnl), cls: cls(openPnl) },
+            { label: 'Closed P&L', value: fmtD(closedPnl), cls: cls(closedPnl) },
+            { label: 'Total Return', value: fmtP((totalPnl / INITIAL_CAPITAL) * 100), cls: cls(totalPnl) },
+            { label: 'Day P&L', value: fmtD(dayPnl), cls: cls(dayPnl) },
+            { label: 'Open Positions', value: DATA.positions.length, cls: '' },
+        ];
+
+        document.getElementById('metrics-grid').innerHTML = cards.map(c => `
+            <div class="metric-card">
+                <div class="metric-label">${c.label}</div>
+                <div class="metric-value ${c.cls}">${c.value}</div>
+            </div>
+        `).join('');
+    }
+
+    function calculateDayPnl() {
+        let total = 0;
+        for (const p of DATA.positions) {
+            const q = liveQuotes[p.symbol];
+            if (q && q.previousClose) {
+                const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+                const dayChange = curPrice - q.previousClose;
+                total += dayChange * Math.abs(p.qty) * (p.side === 'short' ? -1 : 1);
+            }
+        }
+        return total;
+    }
+
+    function livePortfolioValue() {
+        let positionValue = 0;
+        for (const p of DATA.positions) {
+            const q = liveQuotes[p.symbol];
+            const curPrice = effectivePrice(p.symbol, q) || p.current_price;
+            const mktVal = curPrice * Math.abs(p.qty);
+            positionValue += p.side === 'short' ? -mktVal : mktVal;
+        }
+        if (Object.keys(liveQuotes).length > 0 && DATA.positions.length > 0) {
+            return DATA.account.cash + positionValue;
+        }
+        return DATA.account.portfolio_value || INITIAL_CAPITAL;
+    }
+
+    function effectivePrice(symbol, quote) {
+        if (!quote) return null;
+        const state = (quote.marketState || '').toUpperCase();
+        // Post-market states: POST, POSTPOST, CLOSED
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return quote.postPrice;
+        // Pre-market states: PRE, PREPRE
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return quote.prePrice;
+        return quote.price;
+    }
+
+    function priceLabel(quote) {
+        if (!quote) return '';
+        const state = (quote.marketState || '').toUpperCase();
+        if ((state === 'POST' || state === 'POSTPOST' || state === 'CLOSED') && quote.postPrice)
+            return 'AH';
+        if ((state === 'PRE' || state === 'PREPRE') && quote.prePrice)
+            return 'PM';
+        if (state === 'REGULAR')
+            return 'LIVE';
+        return '';
+    }
+
+    function renderPositions() {
+        const positions = DATA.positions;
+        if (!positions.length) {
+            document.getElementById('positions-table').innerHTML =
+                '<p class="muted">No open positions</p>';
+            return;
+        }
+
+        const pv = livePortfolioValue();
+        let rows = '';
+        let totalPnl = 0;
+        let totalMktVal = 0;
+
+        for (const p of positions) {
+            const q = liveQuotes[p.symbol];
+            const livePrice = effectivePrice(p.symbol, q);
+            const curPrice = livePrice || p.current_price;
+            const pnl = p.side === 'short'
+                ? (p.entry_price - curPrice) * Math.abs(p.qty)
+                : (curPrice - p.entry_price) * Math.abs(p.qty);
+            const costBasis = p.entry_price * Math.abs(p.qty);
+            const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+            const mktVal = curPrice * Math.abs(p.qty);
+            const pctOfPortfolio = pv > 0 ? (mktVal / pv) * 100 : 0;
+            totalPnl += pnl;
+            totalMktVal += mktVal;
+
+            // Day change from Yahoo
+            let dayChangePct = null;
+            let dayChangeAmt = null;
+            if (q) {
+                dayChangePct = q.changePct;
+                dayChangeAmt = q.change;
+            }
+
+            // After-hours / pre-market badge
+            let ahBadge = '';
+            if (q) {
+                const pLabel = priceLabel(q);
+                const state = (q.marketState || '').toUpperCase();
+                if (pLabel === 'AH') {
+                    const chg = q.postPrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">AH <span class="${cls(chg)}">${fmtP(chgPct)}</span></div>`;
+                } else if (pLabel === 'PM') {
+                    const chg = q.prePrice - q.price;
+                    const chgPct = q.price ? (chg / q.price) * 100 : 0;
+                    ahBadge = `<div class="ah-badge">PM <span class="${cls(chg)}">${fmtP(chgPct)}</span></div>`;
+                } else if (pLabel === 'LIVE') {
+                    ahBadge = `<div class="ah-badge live-dot">LIVE</div>`;
+                }
+            }
+
+            // Entry date + days held
+            let entryDateStr = '—';
+            let daysHeld = '';
+            if (p.entry_date) {
+                entryDateStr = p.entry_date;
+                const ed = new Date(p.entry_date + 'T00:00:00');
+                const now = new Date();
+                const diffDays = Math.floor((now - ed) / (1000 * 60 * 60 * 24));
+                daysHeld = `<div class="stock-name">${diffDays}d</div>`;
+            }
+
+            rows += `<tr>
+                <td>
+                    <strong>${p.symbol}</strong>
+                    ${q ? `<div class="stock-name">${q.name || ''}</div>` : ''}
+                </td>
+                <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
+                <td>${Math.abs(p.qty)}</td>
+                <td>$${fmt(p.entry_price)}</td>
+                <td data-sym="${p.symbol}">
+                    $${fmt(curPrice)}
+                    ${ahBadge}
+                </td>
+                <td class="${cls(pnl)}">$${fmt(pnl)}</td>
+                <td class="${cls(pnlPct)}">${fmtP(pnlPct)}</td>
+                <td class="${dayChangePct != null ? cls(dayChangePct) : ''}">${dayChangePct != null ? fmtP(dayChangePct) : '—'}</td>
+                <td>$${fmt(mktVal)}</td>
+                <td>${fmt(pctOfPortfolio, 1)}%</td>
+                <td>${entryDateStr}${daysHeld}</td>
+            </tr>`;
+        }
+
+        document.getElementById('positions-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Qty</th>
+                    <th>Entry</th><th>Current</th>
+                    <th>P&amp;L</th><th>P&amp;L %</th><th>Day Chg</th>
+                    <th>Mkt Value</th><th>% Port</th><th>Entered</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot><tr>
+                    <td colspan="5" style="text-align:right;font-weight:600;">Totals</td>
+                    <td class="${cls(totalPnl)}" style="font-weight:600;">$${fmt(totalPnl)}</td>
+                    <td></td>
+                    <td></td>
+                    <td style="font-weight:600;">$${fmt(totalMktVal)}</td>
+                    <td style="font-weight:600;">${fmt(pv > 0 ? (totalMktVal / pv) * 100 : 0, 1)}%</td>
+                    <td></td>
+                </tr></tfoot>
+            </table>`;
+    }
+
+    function toTvSymbol(s) {
+        return (s.endsWith('USD') && s.length <= 7 && !s.includes('-'))
+            ? 'COINBASE:' + s.slice(0,-3) + 'USD' : s;
+    }
+
+    function renderWatchlist() {
+        const positions = DATA.positions;
+        if (!positions.length) {
+            document.getElementById('watchlist-section').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('watchlist-section').style.display = 'block';
+
+        // Build dropdown selector
+        const selectEl = document.getElementById('watchlist-select');
+        let opts = `<option value=""${!activeWatchSymbol ? ' selected' : ''}>Select a symbol…</option>`;
+        opts += positions.map(p => {
+            return `<option value="${p.symbol}"${activeWatchSymbol === p.symbol ? ' selected' : ''}>${p.symbol}</option>`;
+        }).join('');
+        selectEl.innerHTML = opts;
+
+        // Render info cards for all positions (compact, no charts)
+        const infoCards = positions.map(p => {
+            const q = liveQuotes[p.symbol];
+            const yahooSym = toYahooSymbol(p.symbol);
+            const tvSymbol = toTvSymbol(p.symbol);
+            let priceInfo = '';
+            if (q) {
+                priceInfo = `
+                    <span class="watch-price">$${fmt(q.price)}</span>
+                    <span class="${cls(q.changePct)}">${fmtP(q.changePct)}</span>
+                    <span class="watch-detail-inline">H:$${fmt(q.dayHigh)} L:$${fmt(q.dayLow)}</span>
+                    <span class="watch-detail-inline">Vol:${q.volume ? (q.volume/1e6).toFixed(1)+'M' : '—'}</span>
+                `;
+            }
+            return `<div class="watch-info-row ${activeWatchSymbol === p.symbol ? 'active' : ''}" onclick="selectWatchSymbol('${p.symbol}')">
+                <div class="watch-info-left">
+                    <strong>${p.symbol}</strong>
+                    ${q ? `<span class="stock-name">${q.name}</span>` : ''}
+                </div>
+                <div class="watch-info-mid">${priceInfo}</div>
+                <div class="watch-links">
+                    <a href="https://finance.yahoo.com/quote/${yahooSym}" target="_blank" onclick="event.stopPropagation()">Y!</a>
+                    <a href="https://www.tradingview.com/chart/?symbol=${tvSymbol}" target="_blank" onclick="event.stopPropagation()">TV</a>
+                </div>
+            </div>`;
+        }).join('');
+        document.getElementById('watchlist-info').innerHTML = infoCards;
+
+        // Render chart ONLY if selected symbol actually changed (avoid iframe reload)
+        updateWatchlistChart();
+    }
+
+    function updateWatchlistChart() {
+        const chartEl = document.getElementById('watchlist-chart');
+        if (activeWatchSymbol) {
+            if (renderedChartSymbol !== activeWatchSymbol) {
+                const tvSymbol = toTvSymbol(activeWatchSymbol);
+                chartEl.style.display = 'block';
+                chartEl.innerHTML = `
+                    <div class="tradingview-widget">
+                        <iframe src="https://s.tradingview.com/widgetembed/?symbol=${tvSymbol}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0d1117&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&hideideas=1&hidevolume=0&padding=0"
+                            style="width:100%;height:550px;border:none;" allowtransparency="true"></iframe>
+                    </div>`;
+                renderedChartSymbol = activeWatchSymbol;
+            }
+        } else {
+            chartEl.style.display = 'none';
+            chartEl.innerHTML = '';
+            renderedChartSymbol = null;
+        }
+    }
+
+    function selectWatchSymbol(symbol) {
+        activeWatchSymbol = symbol || null;
+        renderWatchlist();
+    }
+
+    function renderOpenOrders() {
+        const orders = DATA.open_orders || [];
+        const positions = DATA.positions || [];
+        const section = document.getElementById('open-orders-section');
+        const countEl = document.getElementById('open-orders-count');
+        if (!orders.length) {
+            countEl.textContent = '0 orders';
+            document.getElementById('open-orders-table').innerHTML =
+                '<p class="muted">No open orders</p>';
+            return;
+        }
+        countEl.textContent = `${orders.length} order${orders.length > 1 ? 's' : ''}`;
+
+        // Build position lookup for matching stops to positions
+        const posMap = {};
+        positions.forEach(p => { posMap[p.symbol] = p; });
+
+        let rows = orders.map(o => {
+            // Format price display based on order type
+            let priceDisplay = '—';
+            if (o.type === 'stop' && o.stop_price) {
+                priceDisplay = `Stop @ $${fmt(o.stop_price)}`;
+            } else if (o.type === 'limit' && o.limit_price) {
+                priceDisplay = `Limit @ $${fmt(o.limit_price)}`;
+            } else if (o.type === 'stop_limit') {
+                priceDisplay = `Stop $${fmt(o.stop_price || 0)} / Lim $${fmt(o.limit_price || 0)}`;
+            } else if (o.type === 'market') {
+                priceDisplay = 'Market';
+            } else {
+                priceDisplay = o.type || '—';
+            }
+
+            // Derive purpose from context — Option D: standalone GTC stops
+            let purpose = '';
+            const pos = posMap[o.symbol];
+            if (o.type === 'stop' && o.order_class !== 'bracket' && o.order_class !== 'oto') {
+                // Standalone GTC stop-loss (Option D)
+                const tifLabel = (o.time_in_force === 'gtc') ? 'GTC' : (o.time_in_force || '');
+                purpose = `<span class="badge badge-stoploss">${tifLabel} stop-loss</span>`;
+                // Show distance from current price if position exists
+                if (pos && pos.current_price && o.stop_price) {
+                    const curr = parseFloat(pos.current_price);
+                    const sl = parseFloat(o.stop_price);
+                    const dist = Math.abs(curr - sl) / curr * 100;
+                    priceDisplay += ` <span class="muted">${dist.toFixed(1)}% away</span>`;
+                }
+            } else if (o.order_class === 'oto' || o.order_class === 'bracket') {
+                purpose = `<span class="badge badge-bracket">${o.order_class}</span>`;
+            } else if (o.type === 'limit') {
+                purpose = '<span class="badge badge-takeprofit">take-profit</span>';
+            } else {
+                purpose = `<span class="badge badge-open">${o.type || 'order'}</span>`;
+            }
+
+            // Position context column — show which position this protects
+            let protects = '—';
+            if (pos) {
+                const sideLabel = pos.side === 'long' ? '▲L' : '▼S';
+                const sideColor = pos.side === 'long' ? 'badge-buy' : 'badge-sell';
+                protects = `<span class="badge ${sideColor}">${sideLabel}</span> x${Math.abs(pos.qty)}`;
+            }
+
+            const statusCls = o.status === 'accepted' || o.status === 'new' ? 'badge-open' : 'badge-filled';
+            const dateStr = o.submitted_at ? o.submitted_at.substring(0, 10) : '—';
+
+            return `
+                <tr>
+                    <td><strong>${o.symbol}</strong></td>
+                    <td>${protects}</td>
+                    <td>${priceDisplay}</td>
+                    <td>${purpose}</td>
+                    <td>${dateStr}</td>
+                    <td><span class="badge ${statusCls}">${o.status}</span></td>
+                </tr>`;
+        }).join('');
+
+        document.getElementById('open-orders-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Protects</th>
+                    <th>Price</th><th>Type</th><th>Submitted</th><th>Status</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
+    let currentTradeFilter = 'all';
+
+    function setTradeFilter(filter) {
+        currentTradeFilter = filter;
+        document.querySelectorAll('#trades-filter-toggle .toggle-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.filter === filter);
+        });
+        renderTrades();
+    }
+
+    function renderTrades() {
+        let trades = DATA.trades;
+        if (!trades.length) {
+            document.getElementById('trades-table').innerHTML =
+                '<p class="muted">No trades yet</p>';
+            return;
+        }
+
+        // Apply filter
+        if (currentTradeFilter !== 'all') {
+            trades = trades.filter(t => t.trade_type === currentTradeFilter);
+        }
+
+        if (!trades.length) {
+            const label = currentTradeFilter === 'entry' ? 'entries' : 'exits';
+            document.getElementById('trades-table').innerHTML =
+                `<p class="muted">No ${label} yet</p>`;
+            return;
+        }
+
+        let rows = trades.map(t => {
+            const isExit = t.trade_type === 'exit';
+            const typeLabel = isExit ? 'EXIT' : 'ENTRY';
+            const typeCls = isExit ? 'badge-sell' : 'badge-buy';
+            const fillPrice = `$${fmt(t.price)}`;
+            const entryCol = isExit && t.entry_price ? `$${fmt(t.entry_price)}` : (isExit ? '—' : fillPrice);
+            const exitCol = isExit ? fillPrice : '—';
+            const pnlCol = t.pnl_pct != null
+                ? `<span class="${cls(t.pnl_pct)}">${fmtP(t.pnl_pct)}</span>`
+                : '—';
+            return `
+            <tr>
+                <td><strong>${t.symbol}</strong></td>
+                <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+                <td><span class="badge ${typeCls}">${typeLabel}</span></td>
+                <td>${t.qty}</td>
+                <td>${entryCol}</td>
+                <td>${exitCol}</td>
+                <td>${t.date}</td>
+                <td>${pnlCol}</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('trades-table').innerHTML = `
+            <table>
+                <thead><tr>
+                    <th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
+                    <th>Entry $</th><th>Exit $</th>
+                    <th>Date</th><th>P&amp;L</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
+    // ── Intraday equity accumulator (dense, every 5s refresh) ──────────
+    // Pre-populate from Alpaca 15-min portfolio history (so 1D chart works on fresh load)
+    let intradayEquity = (DATA.intraday_equity || []).map(p => ({
+        time: new Date(p.time),
+        equity: p.equity,
+    }));
+
+    function getEquityDataForRange(range) {
+        // For 1D, use intraday array if we have points
+        if (range === '1d') {
+            if (intradayEquity.length > 0) {
+                return intradayEquity.map(p => ({
+                    date: p.time.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}),
+                    equity: p.equity,
+                    isLive: true,
+                }));
+            }
+        }
+
+        const eq = DATA.equity_curve;
+        if (!eq.length) return [];
+        if (range === 'all') return eq;
+
+        const now = new Date();
+        let cutoff;
+        switch(range) {
+            case '1d': cutoff = new Date(now - 24*60*60*1000); break;
+            case '1m': cutoff = new Date(now.getFullYear(), now.getMonth()-1, now.getDate()); break;
+            case '3m': cutoff = new Date(now.getFullYear(), now.getMonth()-3, now.getDate()); break;
+            case '1y': cutoff = new Date(now.getFullYear()-1, now.getMonth(), now.getDate()); break;
+            default:   return eq;
+        }
+        return eq.filter(d => {
+            if (d.isLive) return true;
+            const dt = new Date(d.isoDate || d.date);
+            return !isNaN(dt) && dt >= cutoff;
+        });
+    }
+
+    function setEquityRange(range) {
+        currentEquityRange = range;
+        document.querySelectorAll('#equity-range-toggle .toggle-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.range === range);
+        });
+        renderEquityChart();
+    }
+
+    // ── Crosshair / vertical-line plugin ──────────────────────────────────
+    const crosshairPlugin = {
+        id: 'crosshairLine',
+        afterDraw(chart) {
+            if (chart._crosshairX == null) return;
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(chart._crosshairX, yAxis.top);
+            ctx.lineTo(chart._crosshairX, yAxis.bottom);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(139,148,158,0.5)';
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.restore();
+        }
+    };
+
+    function updateEquityHeader(currentVal, startVal) {
+        const el = document.getElementById('equity-value');
+        const chEl = document.getElementById('equity-change');
+        el.textContent = '$' + currentVal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        const diff = currentVal - startVal;
+        const pct = startVal > 0 ? (diff / startVal) * 100 : 0;
+        const sign = diff >= 0 ? '+' : '';
+        const color = diff >= 0 ? '#3fb950' : '#f85149';
+        const rangeLabels = { '1d': 'Today', '1m': 'Past Month', '3m': 'Past 3 Months', '1y': 'Past Year', 'all': 'All Time' };
+        chEl.innerHTML = `<span style="color:${color}">${sign}$${Math.abs(diff).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} (${sign}${pct.toFixed(2)}%)</span>  <span class="equity-range-label">${rangeLabels[currentEquityRange] || ''}</span>`;
+        el.style.color = color;
+    }
+
+    function renderEquityChart() {
+        const eq = getEquityDataForRange(currentEquityRange);
+        if (!eq.length) {
+            document.getElementById('no-equity').style.display = 'block';
+            return;
+        }
+        document.getElementById('no-equity').style.display = 'none';
+
+        // Thin large datasets
+        let chartData = eq;
+        if (eq.length > 600) {
+            const step = Math.ceil(eq.length / 600);
+            chartData = eq.filter((_, i) => i % step === 0 || i === eq.length - 1);
+        }
+
+        const values = chartData.map(d => d.equity);
+        const labels = chartData.map(d => d.date);
+        const startVal = values[0];
+        const endVal   = values[values.length - 1];
+        const isUp = endVal >= startVal;
+
+        // Dynamic colors
+        const lineColor = isUp ? '#3fb950' : '#f85149';
+        const fillColor = isUp ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)';
+
+        // Update P&L header
+        updateEquityHeader(endVal, startVal);
+
+        const ctx = document.getElementById('equityChart').getContext('2d');
+
+        // Reference line (starting equity)
+        const refLinePlugin = {
+            id: 'refLine',
+            beforeDraw(chart) {
+                const yAxis = chart.scales.y;
+                const xAxis = chart.scales.x;
+                const yPixel = yAxis.getPixelForValue(startVal);
+                if (yPixel < yAxis.top || yPixel > yAxis.bottom) return;
+                const cctx = chart.ctx;
+                cctx.save();
+                cctx.beginPath();
+                cctx.moveTo(xAxis.left, yPixel);
+                cctx.lineTo(xAxis.right, yPixel);
+                cctx.lineWidth = 1;
+                cctx.strokeStyle = 'rgba(139,148,158,0.3)';
+                cctx.setLineDash([6, 4]);
+                cctx.stroke();
+                cctx.restore();
+            }
+        };
+
+        // Gradient fill
+        const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.clientHeight);
+        gradient.addColorStop(0, isUp ? 'rgba(63,185,80,0.18)' : 'rgba(248,81,73,0.18)');
+        gradient.addColorStop(1, 'rgba(13,17,23,0)');
+
+        // Destroy previous chart and recreate (color/gradient changes require it)
+        if (equityChart) {
+            equityChart.destroy();
+            equityChart = null;
+        }
+
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Portfolio Value',
+                    data: values,
+                    borderColor: lineColor,
+                    backgroundColor: gradient,
+                    borderWidth: 1.5,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    pointHitRadius: 8,
+                }]
+            },
+            plugins: [refLinePlugin, crosshairPlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: false,  // we use the header instead
+                    },
+                },
+                scales: {
+                    y: {
+                        grid: { color: '#21262d' },
+                        ticks: { color: '#8b949e', callback: v => '$' + v.toLocaleString() }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            color: '#8b949e',
+                            maxRotation: 0,
+                            autoSkipPadding: 30,
+                            maxTicksLimit: 8,
+                        }
+                    }
+                },
+                onHover: (event, elements) => {
+                    const chart = equityChart;
+                    if (!chart) return;
+                    const points = chart.getElementsAtEventForMode(event.native, 'index', {intersect: false}, false);
+                    if (points.length > 0) {
+                        const idx = points[0].index;
+                        const hoverVal = values[idx];
+                        chart._crosshairX = points[0].element.x;
+                        updateEquityHeader(hoverVal, startVal);
+                    } else {
+                        chart._crosshairX = null;
+                        updateEquityHeader(endVal, startVal);
+                    }
+                    chart.draw();
+                }
+            }
+        });
+
+        // Reset header on mouse leave
+        ctx.canvas.addEventListener('mouseleave', () => {
+            if (equityChart) {
+                equityChart._crosshairX = null;
+                equityChart.draw();
+            }
+            updateEquityHeader(endVal, startVal);
+        });
+    }
+
+    function renderMarketStatus() {
+        const el = document.getElementById('market-status');
+        // Use time-based state for the first equity symbol (not crypto)
+        const equitySym = DATA.positions.map(p => p.symbol).find(s => !isCrypto(s));
+        const state = equitySym ? getCurrentMarketState(equitySym) : 'CLOSED';
+        const labels = { REGULAR: 'Market Open', PRE: 'Pre-Market', POST: 'After Hours', CLOSED: 'Market Closed' };
+        el.textContent = labels[state] || state;
+        el.className = 'market-badge ' + (state === 'REGULAR' ? 'open' : state === 'CLOSED' ? 'closed' : 'extended');
+    }
+
+    function updateTimestamps() {
+        document.getElementById('last-update').textContent =
+            'Data snapshot: ' + DATA.generated_utc + ' UTC';
+    }
+
+    // ── Main loop ─────────────────────────────────────────────────────────
+
+    async function refreshPrices() {
+        const symbols = DATA.positions.map(p => p.symbol);
+        if (symbols.length === 0) return;
+
+        document.getElementById('price-status').textContent = 'Fetching live prices...';
+        const quotes = await fetchLiveQuotes(symbols);
+        if (Object.keys(quotes).length > 0) {
+            // Track price changes for flash animation
+            for (const sym of Object.keys(quotes)) {
+                if (liveQuotes[sym]) lastPrices[sym] = effectivePrice(sym, liveQuotes[sym]);
+            }
+            // Merge: use TIME-BASED market state (not stale server snapshot),
+            // inherit extended-hours prices from server if client lacks them
+            const serverQ = DATA.server_quotes || {};
+            for (const sym of Object.keys(quotes)) {
+                const cq = quotes[sym];
+                const sq = serverQ[sym] || liveQuotes[sym] || {};
+                // Always use time-based market state — the CORS API and server
+                // snapshot are both unreliable for marketState transitions
+                cq.marketState = getCurrentMarketState(sym);
+                // Inherit pre/post prices from server if client lacks them
+                if (!cq.prePrice  && sq.prePrice)  { cq.prePrice = sq.prePrice; cq.preChange = sq.preChange; cq.preChangePct = sq.preChangePct; }
+                if (!cq.postPrice && sq.postPrice) { cq.postPrice = sq.postPrice; cq.postChange = sq.postChange; cq.postChangePct = sq.postChangePct; }
+                // Keep server name if client has a generic one
+                if ((!cq.name || cq.name === sym) && sq.name) cq.name = sq.name;
+            }
+            liveQuotes = quotes;
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot">&#9679;</span> Live prices · updated ' + new Date().toLocaleTimeString();
+        } else if (Object.keys(liveQuotes).length > 0) {
+            // Still have server-side quotes — show that
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot" style="color:#f0ad4e;">&#9679;</span> Server prices (snapshot) · client refresh unavailable';
+        } else {
+            document.getElementById('price-status').textContent = 'Using cached prices (live fetch unavailable)';
+        }
+
+        renderPositions();
+        renderMetrics();
+        renderMarketStatus();
+        renderWatchlist();
+        flashUpdatedCells();
+
+        // Append a live equity point from current portfolio value
+        appendLiveEquityPoint();
+        renderEquityChart();
+    }
+
+    function flashUpdatedCells() {
+        document.querySelectorAll('[data-sym]').forEach(el => {
+            const sym = el.dataset.sym;
+            const q = liveQuotes[sym];
+            if (q && lastPrices[sym] !== undefined && q.price !== lastPrices[sym]) {
+                el.classList.add('price-flash');
+                setTimeout(() => el.classList.remove('price-flash'), 1200);
+            }
+        });
+    }
+
+    // Track the last equity value we pushed to avoid duplicate flat points
+    let lastLiveEquity = null;
+
+    function appendLiveEquityPoint() {
+        if (Object.keys(liveQuotes).length === 0) return;
+        const equity = livePortfolioValue();
+        if (equity == null || equity <= 0) return;
+
+        const now = new Date();
+        const iso = now.toISOString();
+        const minuteKey = iso.slice(0, 16);
+
+        // Always push to intradayEquity (dense, for 1D chart)
+        intradayEquity.push({ time: now, equity: equity });
+
+        // Don't push duplicate flat values to the main equity_curve
+        if (lastLiveEquity !== null && Math.abs(equity - lastLiveEquity) < 0.01) return;
+        lastLiveEquity = equity;
+
+        const label = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+        const eq = DATA.equity_curve;
+        if (eq.length > 0 && eq[eq.length - 1].isLive) {
+            const lastKey = (eq[eq.length - 1].isoDate || '').slice(0, 16);
+            if (lastKey === minuteKey) {
+                eq[eq.length - 1].equity = equity;
+            } else {
+                eq.push({ date: label, isoDate: iso, equity: equity, isLive: true });
+            }
+        } else {
+            eq.push({ date: label, isoDate: iso, equity: equity, isLive: true });
+        }
+    }
+
+    function startCountdown() {
+        setInterval(() => {
+            countdown--;
+            const el = document.getElementById('refresh-countdown');
+            if (countdown <= 0) {
+                countdown = REFRESH_INTERVAL;
+                el.textContent = 'Refreshing...';
+                refreshPrices();
+            } else {
+                el.textContent = `Next refresh: ${countdown}s`;
+            }
+        }, 1000);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    (async function init() {
+        updateTimestamps();
+
+        // Immediately render with server-side quotes (no wait)
+        if (Object.keys(liveQuotes).length > 0) {
+            document.getElementById('price-status').innerHTML =
+                '<span class="live-dot" style="color:#f0ad4e;">&#9679;</span> Server prices (fetching live...)';
+        }
+        renderMetrics();
+        renderPositions();
+        renderOpenOrders();
+        renderTrades();
+        renderEquityChart();
+        renderWatchlist();
+
+        // Then try upgrading to live CORS-proxied quotes
+        await refreshPrices();
+        startCountdown();
+    })();
+    </script>
+</body>
+</html>
