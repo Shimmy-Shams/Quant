@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-03-06T21:10:25.635535",
+  "timestamp": "2026-03-07T00:10:31.481608",
   "mode": "live",
   "account": {
-    "equity": 1027513.57,
+    "equity": 1023884.14,
     "cash": 99778.73,
-    "portfolio_value": 1027513.57,
-    "buying_power": 1127292.3
+    "portfolio_value": 1023884.14,
+    "buying_power": 1123662.87
   },
   "positions": [
     {
@@ -13,10 +13,10 @@
       "qty": 596.0,
       "side": "long",
       "entry_price": 255.254916,
-      "current_price": 283.58,
-      "market_value": 169013.68,
-      "unrealized_pl": 16881.750064,
-      "unrealized_plpc": 11.097,
+      "current_price": 283.5,
+      "market_value": 168966.0,
+      "unrealized_pl": 16834.070064,
+      "unrealized_plpc": 11.065,
       "entry_date": "2026-02-24"
     },
     {
@@ -35,10 +35,10 @@
       "qty": 1885.0,
       "side": "long",
       "entry_price": 80.33,
-      "current_price": 77.92,
-      "market_value": 146879.2,
-      "unrealized_pl": -4542.85,
-      "unrealized_plpc": -3.0,
+      "current_price": 77.78,
+      "market_value": 146615.3,
+      "unrealized_pl": -4806.75,
+      "unrealized_plpc": -3.174,
       "entry_date": "2026-03-02"
     },
     {
@@ -46,10 +46,10 @@
       "qty": 323.0,
       "side": "long",
       "entry_price": 471.304954,
-      "current_price": 480.0,
-      "market_value": 155040.0,
-      "unrealized_pl": 2808.499858,
-      "unrealized_plpc": 1.8450000000000002,
+      "current_price": 480.76,
+      "market_value": 155285.48,
+      "unrealized_pl": 3053.979858,
+      "unrealized_plpc": 2.0060000000000002,
       "entry_date": "2026-03-06"
     },
     {
@@ -68,10 +68,10 @@
       "qty": 7284.0,
       "side": "long",
       "entry_price": 21.14,
-      "current_price": 21.04,
-      "market_value": 153255.36,
-      "unrealized_pl": -728.4,
-      "unrealized_plpc": -0.473,
+      "current_price": 20.5508,
+      "market_value": 149692.0272,
+      "unrealized_pl": -4291.7328,
+      "unrealized_plpc": -2.787,
       "entry_date": "2026-03-06"
     }
   ],
@@ -81,7 +81,7 @@
       "side": "buy",
       "qty": 7284.0,
       "filled_price": 21.14,
-      "submitted_at": "2026-03-06 14:35:42.801011+00:00",
+      "submitted_at": "2026-03-06 14:35:42.801012+00:00",
       "order_id": "e1834e2a-df23-4894-b7dd-fe450005fed2",
       "order_type": "limit",
       "trade_type": "entry"
